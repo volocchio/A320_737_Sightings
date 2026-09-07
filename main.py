@@ -606,8 +606,8 @@ def main() -> None:
     t_watch.start()
 
     # Thread 3 — Flask dashboard on port 8737
-    log.info("Dashboard running at http://0.0.0.0:8525")
-    flask_app.run(host="0.0.0.0", port=8525, debug=False, use_reloader=False)
+    log.info("Dashboard running at http://0.0.0.0:8737")
+    flask_app.run(host="0.0.0.0", port=8737, debug=False, use_reloader=False)
 
 
 if __name__ == "__main__":

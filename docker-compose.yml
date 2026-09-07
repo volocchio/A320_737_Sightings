@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "127.0.0.1:8525:8525"
+      - "127.0.0.1:8737:8737"
     volumes:
       # Mount live code from host — webhook can git pull here and restart to pick up changes
       - /opt/a320737_sightings:/app

@@ -4,7 +4,7 @@ trigger_deploy.py — push a deploy and confirm it landed.
 
 Usage:
     python trigger_deploy.py                    # deploys to production
-    python trigger_deploy.py http://localhost:8525  # deploys locally
+    python trigger_deploy.py http://localhost:8737  # deploys locally
 
 What it does:
   1. Reads the current local git HEAD so it knows what commit to expect.

@@ -2899,6 +2899,10 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
     route_map = database.get_route_map_data(top_n=80, region=region)
     route_airports_js = _json.dumps(route_map.get("airports", []))
     route_routes_js = _json.dumps(route_map.get("routes", []))
+    map_center_lat = 52 if region == "EU_UK" else 39
+    map_center_lon = 10 if region == "EU_UK" else -96
+    map_zoom = 4 if region == "EU_UK" else 4
+    map_max_zoom = 6 if region == "EU_UK" else 5
 
     def simple_rows(items, name="Item", third_label="", third_fn=None):
         if not items:
@@ -2946,7 +2950,7 @@ const routeRoutes = {route_routes_js};
 (function() {{
   const el = document.getElementById('routeMap');
   if (!el || typeof L === 'undefined') return;
-  const map = L.map('routeMap', {{ zoomControl: true, scrollWheelZoom: false }}).setView([39, -96], 4);
+  const map = L.map('routeMap', {{ zoomControl: true, scrollWheelZoom: false }}).setView([{map_center_lat}, {map_center_lon}], {map_zoom});
   L.tileLayer('https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{ maxZoom: 12, attribution: '&copy; OpenStreetMap' }}).addTo(map);
   const byIcao = Object.fromEntries(routeAirports.map(a => [a.icao, a]));
   routeRoutes.forEach(r => {{
@@ -2957,7 +2961,7 @@ const routeRoutes = {route_routes_js};
   routeAirports.forEach(a => L.circleMarker([a.lat,a.lon], {{ radius:4, color:'#f59e0b', fillColor:'#fbbf24', fillOpacity:.8, weight:1 }}).bindTooltip(a.icao).addTo(map));
   if (routeAirports.length) {{
     const bounds = L.latLngBounds(routeAirports.map(a => [a.lat, a.lon]));
-    map.fitBounds(bounds, {{ padding:[30,30], maxZoom: {6 if region == 'EU_UK' else 5} }});
+    map.fitBounds(bounds, {{ padding:[30,30], maxZoom: {map_max_zoom} }});
   }}
 }})();
 </script>

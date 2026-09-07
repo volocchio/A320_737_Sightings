@@ -6,7 +6,4 @@ flask>=3.0.0
 timezonefinder>=6.2.0
 openai>=1.40.0
 
-# Shared WAT tables — canonical across Tamarack tools.
-# Installed from private GitHub repo; the deploy webhook configures git
-# globally to use GITHUB_TOKEN so pip can fetch this transparently.
-tamarack-wat-tables @ git+https://github.com/volocchio/tamarack-wat-tables.git@main
+# tamarack-wat-tables intentionally omitted for A320/737 deployment; wat_lookup.py degrades gracefully.

@@ -2563,12 +2563,18 @@ def get_airline_insights(region: str = "NA", limit: int = 15) -> dict:
         """, (region, limit)).fetchall()]
         metric_rows = [dict(r) for r in conn.execute("""
             SELECT distance_nm, departed_utc, arrived_utc,
+                   sustained_top_alt_ft, top_altitude_ft, initial_cruise_alt_ft,
                    COALESCE(NULLIF(ac_subvariant,''), NULLIF(ac_type,''), 'Unknown') AS type
             FROM v_sightings_dedup
             WHERE region=? AND distance_nm IS NOT NULL AND distance_nm > 0
               AND departed_utc IS NOT NULL AND arrived_utc IS NOT NULL
         """, (region,)).fetchall()]
     distances = [float(r["distance_nm"]) for r in metric_rows if r.get("distance_nm")]
+    altitudes = []
+    for r in metric_rows:
+        alt = r.get("sustained_top_alt_ft") or r.get("top_altitude_ft") or r.get("initial_cruise_alt_ft")
+        if alt:
+            altitudes.append(int(alt))
     bin_size = 250 if region == "EU_UK" else 500
     max_bin = max(1, int((max(distances) if distances else bin_size) // bin_size) + 1)
     dist_labels = [f"{i*bin_size}-{(i+1)*bin_size}" for i in range(max_bin)]
@@ -2583,12 +2589,26 @@ def get_airline_insights(region: str = "NA", limit: int = 15) -> dict:
         dur = _duration_h(r.get("departed_utc"), r.get("arrived_utc"))
         if dur and 0.1 <= dur <= 20:
             scatter.append({"x": round(d), "y": round(d / dur), "type": r.get("type") or "Unknown"})
+    fl_bins = list(range(200, 451, 10))
+    fl_hist = [0] * len(fl_bins)
+    for alt in altitudes:
+        fl = round(alt / 100)
+        if 200 <= fl <= 450:
+            idx = min(len(fl_bins) - 1, max(0, (fl - 200) // 10))
+            fl_hist[idx] += 1
+    fl_labels = [f"FL{v}" for v in fl_bins]
+    avg_fl = round(sum(altitudes) / len(altitudes) / 100) if altitudes else None
+    med_fl = None
+    if altitudes:
+        vals = sorted(round(a / 100) for a in altitudes)
+        med_fl = vals[len(vals)//2]
     return {
         "region": region, "total": total, "recent_24h": recent_24h, "active_tails": active_tails,
         "avg_distance": round(avg_distance) if avg_distance else None,
         "top_types": top_types, "top_operators": top_operators, "top_airports": top_airports,
         "top_routes": top_routes, "longest": longest,
         "dist_hist_labels": dist_labels, "dist_hist": dist_hist, "block_scatter": scatter[:500],
+        "fl_hist_labels": fl_labels, "fl_hist": fl_hist, "avg_fl": avg_fl, "median_fl": med_fl,
     }
 
 def get_mustang_insights() -> dict:

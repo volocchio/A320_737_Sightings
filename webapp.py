@@ -2895,6 +2895,8 @@ def _fleet_penetration_html() -> str:
 def _airline_insights_html(region: str, title: str, back_href: str, back_label: str) -> str:
     """Render A320/737 operational insights. No CJ/ATLAS/WAT logic."""
     data = database.get_airline_insights(region=region, limit=15)
+    compare_region = "EU_UK" if region == "NA" else "NA"
+    compare = database.get_airline_insights(region=compare_region, limit=5)
     stats = database.get_period_stats(region=region)
     route_map = database.get_route_map_data(top_n=80, region=region)
     route_airports_js = _json.dumps(route_map.get("airports", []))
@@ -2908,6 +2910,8 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
     dist_labels_js = _json.dumps(data.get("dist_hist_labels", []))
     dist_counts_js = _json.dumps(data.get("dist_hist", []))
     block_scatter_js = _json.dumps(data.get("block_scatter", []))
+    fl_labels_js = _json.dumps(data.get("fl_hist_labels", []))
+    fl_counts_js = _json.dumps(data.get("fl_hist", []))
     map_center_lat = 52 if region == "EU_UK" else 39
     map_center_lon = 10 if region == "EU_UK" else -96
     map_zoom = 4 if region == "EU_UK" else 4
@@ -2936,6 +2940,10 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
         )
     longest_html = "".join(longest_rows) or '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:14px;">No distance data yet</td></tr>'
     avg = f'{data["avg_distance"]} nm' if data.get("avg_distance") else "—"
+    avg_fl = f'FL{data["avg_fl"]}' if data.get("avg_fl") else "—"
+    med_fl = f'FL{data["median_fl"]}' if data.get("median_fl") else "—"
+    cmp_avg_fl = f'FL{compare["avg_fl"]}' if compare.get("avg_fl") else "—"
+    cmp_avg_dist = f'{compare["avg_distance"]} nm' if compare.get("avg_distance") else "—"
     route_rows = simple_rows(data["top_routes"], third_fn=lambda x: f'{int(x.get("avg_nm") or 0)} nm' if x.get("avg_nm") else "—")
 
     return f"""<!DOCTYPE html>
@@ -2951,8 +2959,8 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
 </style></head><body>
 <div class="nav"><a href="{back_href}">← {back_label}</a> &nbsp;·&nbsp; <a href="/">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights">NA Insights</a> &nbsp;·&nbsp; <a href="/eu">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights">EU Insights</a></div>
 <h1>{title}</h1><div class="sub">A320/737-family operational patterns · region: <strong>{region}</strong> · auto-refreshes every 2 min</div>
-<div class="stats"><div class="stat"><div class="label">Last 24h</div><div class="value">{stats['today']}</div></div><div class="stat"><div class="label">Last 7 days</div><div class="value">{stats['week']}</div></div><div class="stat"><div class="label">All Time</div><div class="value">{data['total']}</div></div><div class="stat"><div class="label">Active Tails</div><div class="value">{data['active_tails']}</div></div><div class="stat"><div class="label">Avg Distance</div><div class="value">{avg}</div></div></div>
-<div class="grid"><div class="card chartbox"><h2>Aircraft Mix</h2><canvas id="typeChart"></canvas></div><div class="card chartbox"><h2>Top Operators</h2><canvas id="operatorChart"></canvas></div><div class="card chartbox"><h2>Arrival Airports</h2><canvas id="airportChart"></canvas></div><div class="card chartbox"><h2>Distance Distribution</h2><canvas id="distanceChart"></canvas></div><div class="card chartbox" style="grid-column:1/-1;"><h2>Block Speed vs Distance</h2><canvas id="blockChart"></canvas></div></div><h2>Route Map</h2><div id="routeMap"></div><div class="grid"><div class="card"><h2>Top Aircraft Variants</h2><table><thead><tr><th>Variant</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_types'])}</tbody></table></div><div class="card"><h2>Top Operators</h2><table><thead><tr><th>Operator</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_operators'])}</tbody></table></div><div class="card"><h2>Top Arrival Airports</h2><table><thead><tr><th>Airport</th><th style="text-align:right;">Arrivals</th><th></th></tr></thead><tbody>{simple_rows(data['top_airports'])}</tbody></table></div><div class="card"><h2>Top Routes</h2><table><thead><tr><th>Route</th><th style="text-align:right;">Flights</th><th>Avg Distance</th></tr></thead><tbody>{route_rows}</tbody></table></div></div>
+<div class="stats"><div class="stat"><div class="label">Last 24h</div><div class="value">{stats['today']}</div></div><div class="stat"><div class="label">Last 7 days</div><div class="value">{stats['week']}</div></div><div class="stat"><div class="label">All Time</div><div class="value">{data['total']}</div></div><div class="stat"><div class="label">Active Tails</div><div class="value">{data['active_tails']}</div></div><div class="stat"><div class="label">Avg Distance</div><div class="value">{avg}</div></div><div class="stat"><div class="label">Avg Flight Level</div><div class="value">{avg_fl}</div></div><div class="stat"><div class="label">Median Flight Level</div><div class="value">{med_fl}</div></div></div><div class="card" style="margin-bottom:18px;"><h2>NA vs EU altitude context</h2><div style="color:#cbd5e1;line-height:1.45;">Current page: <strong>{region}</strong> avg cruise/top altitude <strong>{avg_fl}</strong>, avg distance <strong>{avg}</strong>. Comparison region <strong>{compare_region}</strong>: avg cruise/top altitude <strong>{cmp_avg_fl}</strong>, avg distance <strong>{cmp_avg_dist}</strong>. EU short-haul flights often cruise lower because of airspace/ATC constraints; treat low FL as operational environment unless distance and route suggest otherwise.</div></div>
+<div class="grid"><div class="card chartbox"><h2>Flight Level Distribution</h2><canvas id="flChart"></canvas></div><div class="card chartbox"><h2>Aircraft Mix</h2><canvas id="typeChart"></canvas></div><div class="card chartbox"><h2>Top Operators</h2><canvas id="operatorChart"></canvas></div><div class="card chartbox"><h2>Arrival Airports</h2><canvas id="airportChart"></canvas></div><div class="card chartbox"><h2>Distance Distribution</h2><canvas id="distanceChart"></canvas></div><div class="card chartbox" style="grid-column:1/-1;"><h2>Block Speed vs Distance</h2><canvas id="blockChart"></canvas></div></div><h2>Route Map</h2><div id="routeMap"></div><div class="grid"><div class="card"><h2>Top Aircraft Variants</h2><table><thead><tr><th>Variant</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_types'])}</tbody></table></div><div class="card"><h2>Top Operators</h2><table><thead><tr><th>Operator</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_operators'])}</tbody></table></div><div class="card"><h2>Top Arrival Airports</h2><table><thead><tr><th>Airport</th><th style="text-align:right;">Arrivals</th><th></th></tr></thead><tbody>{simple_rows(data['top_airports'])}</tbody></table></div><div class="card"><h2>Top Routes</h2><table><thead><tr><th>Route</th><th style="text-align:right;">Flights</th><th>Avg Distance</th></tr></thead><tbody>{route_rows}</tbody></table></div></div>
 <h2>Longest Observed Flights</h2><table><thead><tr><th>Tail</th><th>Type</th><th>Route</th><th style="text-align:right;">Distance</th><th>Operator</th><th>Arrived</th></tr></thead><tbody>{longest_html}</tbody></table>
 <script>
 const typeLabels = {type_labels_js}, typeCounts = {type_counts_js};
@@ -2960,8 +2968,10 @@ const opLabels = {op_labels_js}, opCounts = {op_counts_js};
 const airportLabels = {airport_labels_js}, airportCounts = {airport_counts_js};
 const distLabels = {dist_labels_js}, distCounts = {dist_counts_js};
 const blockScatter = {block_scatter_js};
+const flLabels = {fl_labels_js}, flCounts = {fl_counts_js};
 const chartOpts = {{ responsive:true, maintainAspectRatio:false, plugins:{{legend:{{labels:{{color:'#cbd5e1'}}}}}}, scales:{{x:{{ticks:{{color:'#94a3b8'}},grid:{{color:'#334155'}}}},y:{{ticks:{{color:'#94a3b8'}},grid:{{color:'#334155'}}}}}} }};
 function bar(id, labels, data, label, color) {{ const el=document.getElementById(id); if(!el || typeof Chart==='undefined') return; new Chart(el, {{type:'bar', data:{{labels, datasets:[{{label, data, backgroundColor:color, borderColor:color}}]}}, options:chartOpts}}); }}
+bar('flChart', flLabels, flCounts, 'Flights', '#f472b6');
 bar('typeChart', typeLabels, typeCounts, 'Flights', '#60a5fa');
 bar('operatorChart', opLabels, opCounts, 'Flights', '#22c55e');
 bar('airportChart', airportLabels, airportCounts, 'Arrivals', '#f59e0b');

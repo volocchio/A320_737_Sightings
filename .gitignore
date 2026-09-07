@@ -1,0 +1,12 @@
+.env
+sightings.db
+__pycache__/
+*.pyc
+.jetnet_entitlement_notified
+jetnet_watch.log
+notify_settings.json
+_jason_api_zip/
+TAMARACK API BUILD OUT.zip
+JETNET_Document_for_your_DocuSign_signature.pdf
+
+dashboard.html

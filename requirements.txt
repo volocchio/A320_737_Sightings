@@ -1,0 +1,12 @@
+requests>=2.31.0
+python-dotenv>=1.0.0
+schedule>=1.2.0
+msal>=1.28.0
+flask>=3.0.0
+timezonefinder>=6.2.0
+openai>=1.40.0
+
+# Shared WAT tables — canonical across Tamarack tools.
+# Installed from private GitHub repo; the deploy webhook configures git
+# globally to use GITHUB_TOKEN so pip can fetch this transparently.
+tamarack-wat-tables @ git+https://github.com/volocchio/tamarack-wat-tables.git@main

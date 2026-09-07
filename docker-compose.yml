@@ -1,0 +1,14 @@
+services:
+  a320737_sightings:
+    build: .
+    image: a320737_sightings
+    container_name: a320737_sightings
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:8525:8525"
+    volumes:
+      # Mount live code from host — webhook can git pull here and restart to pick up changes
+      - /opt/a320737_sightings:/app
+      # Docker socket — allows webhook to rebuild the container
+      - /var/run/docker.sock:/var/run/docker.sock

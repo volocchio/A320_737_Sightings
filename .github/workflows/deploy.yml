@@ -1,0 +1,40 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger deploy via webhook
+        run: |
+          echo "Triggering deploy for commit $GITHUB_SHA ..."
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            "https://a320737sightings.voloaltro.tech/webhook/deploy" \
+            -H "X-Deploy-Secret: ${{ secrets.DEPLOY_SECRET }}")
+          if [ "$HTTP" != "202" ]; then
+            echo "ERROR: webhook returned HTTP $HTTP"
+            exit 1
+          fi
+          echo "Webhook accepted (202) — server is pulling and restarting ..."
+
+      - name: Wait for new commit to go live
+        run: |
+          EXPECTED=$(echo "$GITHUB_SHA" | cut -c1-7)
+          echo "Polling /_version for commit $EXPECTED ..."
+          for i in $(seq 1 18); do
+            sleep 5
+            LIVE=$(curl -s "https://a320737sightings.voloaltro.tech/_version" | python3 -c "import sys,json; print(json.load(sys.stdin).get('commit',''))" 2>/dev/null || echo "")
+            echo "  attempt $i: live=$LIVE expected=$EXPECTED"
+            if [ "$LIVE" = "$EXPECTED" ]; then
+              echo ""
+              echo "✓ DEPLOYED  commit=$LIVE"
+              exit 0
+            fi
+          done
+          echo ""
+          echo "✗ TIMEOUT — server did not restart within 90s"
+          echo "  Run:  docker restart a320737_sightings  on the VPS"
+          exit 1

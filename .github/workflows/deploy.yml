@@ -1,8 +1,10 @@
 name: Deploy to VPS
 
+# Disabled 2026-09-06: manual VPS deploys only for now.
+# The auto workflow was generating repeated failure emails while the app was
+# being edited rapidly. Re-enable by restoring the push trigger below.
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy:

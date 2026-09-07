@@ -4,8 +4,6 @@ webapp.py — lightweight Flask status dashboard for A320/737 Sightings
 Runs on port 8737 alongside the polling daemon.
 Exposes:
   GET /                      — HTML dashboard (last sightings + daemon status)
-  GET /prospects             — ATLAS prospect scoring (30-day mission analysis)
-  GET /insights              — Fleet mission profile analytics
   GET /export/prospects.csv  — CSV export of prospect scores
   GET /health                — JSON health check
   GET /_version              — git SHA + start time of the running process
@@ -3018,9 +3016,6 @@ def dashboard():
     <a href="/eu" title="EU/UK sightings stream — same layout as this page, filtered to Europe/UK landings" style="display:inline-block;background:#4338ca;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
       EU Sightings
     </a>
-    <a href="/eu-insights" title="EU flight-level distribution, semicircular rule compliance, country pairs" style="display:inline-block;background:#6d28d9;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
-      EU Insights
-    </a>
     {_watch_pill_html()}
   </div>
   </div> <!-- /sticky-top -->
@@ -3178,12 +3173,6 @@ def eu_dashboard():
   <div style="margin-bottom:4px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
     <a href="/" style="display:inline-block;background:#1e293b;color:#e2e8f0;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid #334155;">
       ← NA Sightings
-    </a>
-    <a href="/eu-insights" title="EU flight-level distribution, semicircular rule compliance, country pairs" style="display:inline-block;background:#6d28d9;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
-      📊 EU Insights
-    </a>
-    <a href="/insights?region=EU_UK" style="display:inline-block;background:#1d4ed8;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
-      📊 Fleet Insights (EU filter)
     </a>
     {_watch_pill_html()}
   </div>
@@ -4746,6 +4735,7 @@ new Chart(document.getElementById('climbTopChart'), {{
 
 @app.get("/eu-insights")
 def eu_insights():
+    return redirect("/eu", code=302)
     """
     EU-only analytics: flight-level distribution, ICAO semicircular
     rule compliance, country pairs, EU operator leaderboard, EU-scaled

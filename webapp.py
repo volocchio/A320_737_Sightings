@@ -2896,6 +2896,9 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
     """Render A320/737 operational insights. No CJ/ATLAS/WAT logic."""
     data = database.get_airline_insights(region=region, limit=15)
     stats = database.get_period_stats(region=region)
+    route_map = database.get_route_map_data(top_n=80, region=region)
+    route_airports_js = _json.dumps(route_map.get("airports", []))
+    route_routes_js = _json.dumps(route_map.get("routes", []))
 
     def simple_rows(items, name="Item", third_label="", third_fn=None):
         if not items:
@@ -2925,16 +2928,39 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title} — A320/737 Sightings</title><meta http-equiv="refresh" content="120">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}} body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;padding:20px}} a{{color:#60a5fa}} h1{{font-size:28px;margin-bottom:6px}} .sub{{color:#94a3b8;margin-bottom:18px}} .nav{{margin-bottom:18px;font-size:14px}}
 .stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}} .stat,.card{{background:#1e293b;border-radius:8px;padding:16px}} .label{{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px}} .value{{font-size:26px;font-weight:800;color:#60a5fa}}
-.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-bottom:18px}} h2{{font-size:15px;margin-bottom:10px}} table{{width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden}} th{{background:#334155;color:#94a3b8;font-size:11px;text-transform:uppercase;text-align:left;padding:9px}} td{{padding:9px;border-bottom:1px solid #334155;font-size:13px}} tr:hover{{background:#243244}}
+.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-bottom:18px}} #routeMap{{height:420px;border-radius:8px;border:1px solid #334155;margin-bottom:18px;background:#020617}} h2{{font-size:15px;margin-bottom:10px}} table{{width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden}} th{{background:#334155;color:#94a3b8;font-size:11px;text-transform:uppercase;text-align:left;padding:9px}} td{{padding:9px;border-bottom:1px solid #334155;font-size:13px}} tr:hover{{background:#243244}}
 </style></head><body>
 <div class="nav"><a href="{back_href}">← {back_label}</a> &nbsp;·&nbsp; <a href="/">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights">NA Insights</a> &nbsp;·&nbsp; <a href="/eu">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights">EU Insights</a></div>
 <h1>{title}</h1><div class="sub">A320/737-family operational patterns · region: <strong>{region}</strong> · auto-refreshes every 2 min</div>
 <div class="stats"><div class="stat"><div class="label">Last 24h</div><div class="value">{stats['today']}</div></div><div class="stat"><div class="label">Last 7 days</div><div class="value">{stats['week']}</div></div><div class="stat"><div class="label">All Time</div><div class="value">{data['total']}</div></div><div class="stat"><div class="label">Active Tails</div><div class="value">{data['active_tails']}</div></div><div class="stat"><div class="label">Avg Distance</div><div class="value">{avg}</div></div></div>
-<div class="grid"><div class="card"><h2>Top Aircraft Variants</h2><table><thead><tr><th>Variant</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_types'])}</tbody></table></div><div class="card"><h2>Top Operators</h2><table><thead><tr><th>Operator</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_operators'])}</tbody></table></div><div class="card"><h2>Top Arrival Airports</h2><table><thead><tr><th>Airport</th><th style="text-align:right;">Arrivals</th><th></th></tr></thead><tbody>{simple_rows(data['top_airports'])}</tbody></table></div><div class="card"><h2>Top Routes</h2><table><thead><tr><th>Route</th><th style="text-align:right;">Flights</th><th>Avg Distance</th></tr></thead><tbody>{route_rows}</tbody></table></div></div>
+<h2>Route Map</h2><div id="routeMap"></div><div class="grid"><div class="card"><h2>Top Aircraft Variants</h2><table><thead><tr><th>Variant</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_types'])}</tbody></table></div><div class="card"><h2>Top Operators</h2><table><thead><tr><th>Operator</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_operators'])}</tbody></table></div><div class="card"><h2>Top Arrival Airports</h2><table><thead><tr><th>Airport</th><th style="text-align:right;">Arrivals</th><th></th></tr></thead><tbody>{simple_rows(data['top_airports'])}</tbody></table></div><div class="card"><h2>Top Routes</h2><table><thead><tr><th>Route</th><th style="text-align:right;">Flights</th><th>Avg Distance</th></tr></thead><tbody>{route_rows}</tbody></table></div></div>
 <h2>Longest Observed Flights</h2><table><thead><tr><th>Tail</th><th>Type</th><th>Route</th><th style="text-align:right;">Distance</th><th>Operator</th><th>Arrived</th></tr></thead><tbody>{longest_html}</tbody></table>
+<script>
+const routeAirports = {route_airports_js};
+const routeRoutes = {route_routes_js};
+(function() {{
+  const el = document.getElementById('routeMap');
+  if (!el || typeof L === 'undefined') return;
+  const map = L.map('routeMap', {{ zoomControl: true, scrollWheelZoom: false }}).setView([39, -96], 4);
+  L.tileLayer('https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{ maxZoom: 12, attribution: '&copy; OpenStreetMap' }}).addTo(map);
+  const byIcao = Object.fromEntries(routeAirports.map(a => [a.icao, a]));
+  routeRoutes.forEach(r => {{
+    const o = byIcao[r.o], d = byIcao[r.d];
+    if (!o || !d) return;
+    L.polyline([[o.lat,o.lon],[d.lat,d.lon]], {{ color:'#60a5fa', weight: Math.min(8, 1 + r.count), opacity:0.65 }}).bindTooltip(`${{r.o}} → ${{r.d}} · ${{r.count}} flights`).addTo(map);
+  }});
+  routeAirports.forEach(a => L.circleMarker([a.lat,a.lon], {{ radius:4, color:'#f59e0b', fillColor:'#fbbf24', fillOpacity:.8, weight:1 }}).bindTooltip(a.icao).addTo(map));
+  if (routeAirports.length) {{
+    const bounds = L.latLngBounds(routeAirports.map(a => [a.lat, a.lon]));
+    map.fitBounds(bounds, {{ padding:[30,30], maxZoom: {6 if region == 'EU_UK' else 5} }});
+  }}
+}})();
+</script>
 </body></html>"""
 
 

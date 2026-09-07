@@ -370,8 +370,6 @@ def _render_sighting_row_html(r: dict) -> str:
     track = f'<a href="{r["tracking_url"]}" target="_blank" style="color:#60a5fa;">Track</a>' if r.get("tracking_url") else "—"
     dist = r.get("distance_nm")
     dist_cell = f'<span style="color:#f59e0b;font-weight:600;">{int(dist)} nm</span>' if dist else "—"
-    atlas_cell = _atlas_badge(r.get("is_tamarack_fleet"), r.get("serial_number"))
-
     dep = r.get("departed_utc")
     arr = r.get("arrived_utc")
     dur_cell = '<span style="color:#64748b;">—</span>'
@@ -468,7 +466,6 @@ def _render_sighting_row_html(r: dict) -> str:
         f"<tr>"
         f"<td>{r.get('tail_number') or '—'}</td>"
         f"<td>{_type_label(r.get('ac_type',''), r.get('ac_subvariant',''))}</td>"
-        f"<td style='text-align:center;'>{atlas_cell}</td>"
         f"<td>{r.get('origin_icao') or '—'}</td>"
         f"<td>{r.get('dest_icao') or '—'}</td>"
         f"<td>{dist_cell}</td>"
@@ -2417,10 +2414,9 @@ def _chat_widget_html() -> str:
     status_msg = "Ready" if enabled else "OPENAI_API_KEY not set"
     examples_html = (
         "<strong>Examples:</strong><br>"
-        "\u2022 <em>who are my top prospects this month</em><br>"
         "\u2022 <em>who owns N123AB and their phone number</em><br>"
         "\u2022 <em>tell me about N123AB</em><br>"
-        "\u2022 <em>post today's A320/737 summary to Teams</em>"
+        "\u2022 <em>show recent A320 arrivals into Phoenix</em>"
     )
     return f"""
 <style>
@@ -2923,8 +2919,7 @@ def dashboard():
     last_poll = daemon_state.get("last_poll_utc") or "—"
     last_error = daemon_state.get("last_error") or ""
     stats = database.get_period_stats()
-    weekly = database.get_weekly_hot(n=5)
-    fleet_cmp = database.get_fleet_comparison_by_perfgroup()
+    # A320/737 app: no inherited ATLAS prospect/fleet-penetration panels.
 
     status_color = {"running": "#22c55e", "error": "#ef4444", "starting": "#f59e0b"}.get(status, "#888")
     status_dot = f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{status_color};margin-right:6px;"></span>'
@@ -3057,12 +3052,6 @@ def dashboard():
     <a href="/plan" style="display:inline-block;background:#4f46e5;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
       🛫 Daily Flight Plan
     </a>
-    <a href="/prospects" style="display:inline-block;background:#b45309;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
-      🎯 ATLAS Prospects
-    </a>
-    <a href="/insights" style="display:inline-block;background:#1d4ed8;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
-      📊 Fleet Insights
-    </a>
     <a href="/eu" title="EU/UK sightings stream — same layout as this page, filtered to Europe/UK landings" style="display:inline-block;background:#4338ca;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
       EU Sightings
     </a>
@@ -3073,26 +3062,7 @@ def dashboard():
   </div>
   </div> <!-- /sticky-top -->
 
-  <!-- Top row: weekly prospects (left) + fleet penetration thermometers (right) -->
-  <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;align-items:stretch;">
-    <div style="background:#1e293b;border-radius:8px;padding:16px 20px;flex:1;min-width:420px;">
-      <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">
-        🔥 This Week's Top Prospects — <a href="/prospects" style="color:#60a5fa;">view all</a>
-      </div>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:10px;line-height:1.4;">
-        ✅ <strong style="color:#fbbf24;">Checked</strong> = tail is on the Teams watch list (you get a card in TAG Sales Chat when it lands).
-        Check more rows and click <em>Save selected</em> to add them. Removing a tail is done on the <a href="/watch" style="color:#60a5fa;">watch list page</a>.
-      </div>
-      {weekly_html}
-    </div>
-    {_fleet_penetration_html()}
-  </div>
-
-  <!-- M2 yaw-damper suspects (only renders if any qualify) -->
-  {_yaw_damper_panel_html()}
-
-  <!-- ATLAS fleet comparison panel -->
-  {_fleet_comparison_html(fleet_cmp)}
+  <!-- Airline sightings stream: inherited ATLAS prospect/fleet panels removed. -->
 
   <!-- Pagination controls (top) -->
   {_pagination_html(page, total_pages, per_page, total_sightings)}
@@ -3100,7 +3070,7 @@ def dashboard():
   <table>
     <thead>
       <tr>
-        <th>Tail</th><th>Type</th><th>ATLAS</th><th>From</th><th>To</th>
+        <th>Tail</th><th>Type</th><th>From</th><th>To</th>
         <th>Distance</th><th>Duration</th><th>Block</th><th>Fuel</th><th>Programs</th><th>Climb</th><th>Arrived (UTC)</th><th>Local time</th><th>Operator</th><th>Source</th><th>Link</th>
       </tr>
     </thead>
@@ -3249,9 +3219,6 @@ def eu_dashboard():
     <a href="/eu-insights" title="EU flight-level distribution, semicircular rule compliance, country pairs" style="display:inline-block;background:#6d28d9;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
       📊 EU Insights
     </a>
-    <a href="/prospects?region=EU_UK" style="display:inline-block;background:#b45309;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
-      🎯 EU ATLAS Prospects
-    </a>
     <a href="/insights?region=EU_UK" style="display:inline-block;background:#1d4ed8;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
       📊 Fleet Insights (EU filter)
     </a>
@@ -3265,7 +3232,7 @@ def eu_dashboard():
   <table>
     <thead>
       <tr>
-        <th>Tail</th><th>Type</th><th>ATLAS</th><th>From</th><th>To</th>
+        <th>Tail</th><th>Type</th><th>From</th><th>To</th>
         <th>Distance</th><th>Duration</th><th>Block</th><th>Fuel</th><th>Programs</th><th>Climb</th><th>Arrived (UTC)</th><th>Local time</th><th>Operator</th><th>Source</th><th>Link</th>
       </tr>
     </thead>

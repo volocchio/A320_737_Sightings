@@ -2924,49 +2924,12 @@ def dashboard():
     status_color = {"running": "#22c55e", "error": "#ef4444", "starting": "#f59e0b"}.get(status, "#888")
     status_dot = f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{status_color};margin-right:6px;"></span>'
 
-    # This week's hot prospects mini-list
-    watched_tail_set = set(watch_tails.get_watch_list())
-    weekly_html = ('<form method="post" action="/watch/tails/add" '
-                   'style="margin:0;">')
-    for p in weekly:
-        sig_str = " · ".join(p["signals"][:2])
-        tail_u  = (p["tail_number"] or "").upper()
-        checked = ' checked' if tail_u in watched_tail_set else ''
-        # NOTE: the tail-name LINK is intentionally OUTSIDE the <label> so
-        # clicking the visible tail text toggles the checkbox (via the label)
-        # rather than navigating to the dossier. Use the small "→" link to
-        # open the dossier.
-        weekly_html += (
-            f'<div style="display:flex;justify-content:space-between;align-items:center;'
-            f'padding:6px 0;border-bottom:1px solid #1e3a5f;gap:10px;">'
-            f'<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">'
-            f'  <input type="checkbox" name="tails" value="{tail_u}"{checked}'
-            f'         style="accent-color:#fbbf24;transform:scale(1.2);">'
-            f'  <span style="color:#60a5fa;font-weight:600;font-size:13px;">{p["tail_number"]}</span>'
-            f'</label>'
-            f'<a href="/tail/{p["tail_number"]}" style="color:#60a5fa;font-size:11px;" title="Open pre-call dossier">dossier →</a>'
-            f'<span style="font-size:11px;color:#94a3b8;">{p["label"]} · {p["operator"][:20]}</span>'
-            f'<span style="font-size:11px;color:#f97316;font-weight:600;">{sig_str}</span>'
-            f'<span style="font-size:18px;font-weight:700;color:#f97316;">{p["composite_score"]}</span>'
-            f'</div>'
-        )
-    if not weekly:
-        weekly_html += '<div style="color:#94a3b8;font-size:12px;padding:8px 0;">No HOT prospects this week yet.</div>'
-    else:
-        weekly_html += (
-            '<div style="display:flex;justify-content:flex-end;margin-top:10px;gap:8px;">'
-            '  <button type="submit" style="background:#1d4ed8;color:#fff;border:none;'
-            'padding:6px 14px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;">'
-            '→ Save selected to Teams watch list'
-            '  </button>'
-            '</div>'
-        )
-    weekly_html += '</form>'
+    weekly_html = ""
 
     rows_html = "".join(_render_sighting_row_html(r) for r in rows)
 
     if not rows_html:
-        rows_html = '<tr><td colspan="16" style="text-align:center;color:#666;padding:24px;">No sightings yet — daemon is polling…</td></tr>'
+        rows_html = '<tr><td colspan="15" style="text-align:center;color:#666;padding:24px;">No sightings yet — daemon is polling…</td></tr>'
 
     error_banner = f'<div style="background:#7f1d1d;color:#fca5a5;padding:10px 20px;font-size:13px;margin-bottom:16px;border-radius:6px;">Last error: {last_error}</div>' if last_error else ""
 
@@ -3123,7 +3086,7 @@ def eu_dashboard():
     rows_html = "".join(_render_sighting_row_html(r) for r in rows)
     if not rows_html:
         rows_html = (
-            '<tr><td colspan="16" style="text-align:center;color:#666;padding:24px;">'
+            '<tr><td colspan="15" style="text-align:center;color:#666;padding:24px;">'
             'No EU sightings yet — daemon is polling…'
             '</td></tr>'
         )
@@ -3570,6 +3533,7 @@ def plan_enrich():
 
 @app.get("/prospects")
 def prospects():
+    return redirect("/", code=302)
     # Region toggle — same pattern as /insights.
     region_raw = (request.args.get("region", "") or "").strip().upper()
     region = region_raw if region_raw in ("NA", "EU_UK", "OTHER") else None

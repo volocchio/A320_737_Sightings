@@ -2524,6 +2524,50 @@ def get_tail_detail(tail: str, days: int = 180) -> dict | None:
     }
 
 
+
+def get_airline_insights(region: str = "NA", limit: int = 15) -> dict:
+    """Airline-safe insight rollup for A320/737 sightings. No ATLAS/CJ logic."""
+    region = region if region in ("NA", "EU_UK", "OTHER") else "NA"
+    with _connect() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM v_sightings_dedup WHERE region=?", (region,)).fetchone()[0]
+        recent_24h = conn.execute("SELECT COUNT(*) FROM v_sightings_dedup WHERE region=? AND arrived_utc >= datetime('now','-24 hours')", (region,)).fetchone()[0]
+        active_tails = conn.execute("SELECT COUNT(DISTINCT tail_number) FROM v_sightings_dedup WHERE region=? AND tail_number IS NOT NULL AND tail_number!=''", (region,)).fetchone()[0]
+        avg_distance = conn.execute("SELECT AVG(distance_nm) FROM v_sightings_dedup WHERE region=? AND distance_nm IS NOT NULL AND distance_nm > 0", (region,)).fetchone()[0]
+        top_types = [dict(r) for r in conn.execute("""
+            SELECT COALESCE(NULLIF(ac_subvariant,''), NULLIF(ac_type,''), 'Unknown') AS label, COUNT(*) AS n
+            FROM v_sightings_dedup WHERE region=?
+            GROUP BY label ORDER BY n DESC LIMIT ?
+        """, (region, limit)).fetchall()]
+        top_operators = [dict(r) for r in conn.execute("""
+            SELECT COALESCE(NULLIF(operator,''), 'Unknown') AS label, COUNT(*) AS n
+            FROM v_sightings_dedup WHERE region=?
+            GROUP BY label ORDER BY n DESC LIMIT ?
+        """, (region, limit)).fetchall()]
+        top_airports = [dict(r) for r in conn.execute("""
+            SELECT COALESCE(NULLIF(dest_icao,''), 'Unknown') AS label, COUNT(*) AS n
+            FROM v_sightings_dedup WHERE region=?
+            GROUP BY label ORDER BY n DESC LIMIT ?
+        """, (region, limit)).fetchall()]
+        top_routes = [dict(r) for r in conn.execute("""
+            SELECT COALESCE(NULLIF(origin_icao,''), '????') || ' → ' || COALESCE(NULLIF(dest_icao,''), '????') AS label,
+                   COUNT(*) AS n, ROUND(AVG(distance_nm)) AS avg_nm
+            FROM v_sightings_dedup WHERE region=? AND origin_icao IS NOT NULL AND dest_icao IS NOT NULL
+            GROUP BY label ORDER BY n DESC LIMIT ?
+        """, (region, limit)).fetchall()]
+        longest = [dict(r) for r in conn.execute("""
+            SELECT tail_number, COALESCE(NULLIF(ac_subvariant,''), NULLIF(ac_type,''), 'Unknown') AS type,
+                   origin_icao, dest_icao, ROUND(distance_nm) AS distance_nm, arrived_utc, COALESCE(NULLIF(operator,''), 'Unknown') AS operator
+            FROM v_sightings_dedup
+            WHERE region=? AND distance_nm IS NOT NULL AND distance_nm > 0
+            ORDER BY distance_nm DESC LIMIT ?
+        """, (region, limit)).fetchall()]
+    return {
+        "region": region, "total": total, "recent_24h": recent_24h, "active_tails": active_tails,
+        "avg_distance": round(avg_distance) if avg_distance else None,
+        "top_types": top_types, "top_operators": top_operators, "top_airports": top_airports,
+        "top_routes": top_routes, "longest": longest,
+    }
+
 def get_mustang_insights() -> dict:
     """
     Mission profile statistics for C510 (Mustang) adjacent-tier flights.

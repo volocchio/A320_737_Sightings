@@ -2892,6 +2892,52 @@ def _fleet_penetration_html() -> str:
     )
 
 
+def _airline_insights_html(region: str, title: str, back_href: str, back_label: str) -> str:
+    """Render A320/737 operational insights. No CJ/ATLAS/WAT logic."""
+    data = database.get_airline_insights(region=region, limit=15)
+    stats = database.get_period_stats(region=region)
+
+    def simple_rows(items, name="Item", third_label="", third_fn=None):
+        if not items:
+            return '<tr><td colspan="3" style="text-align:center;color:#64748b;padding:14px;">No data yet</td></tr>'
+        out = []
+        for it in items:
+            third = third_fn(it) if third_fn else ""
+            out.append(
+                f'<tr><td>{it.get("label") or "Unknown"}</td>'
+                f'<td style="text-align:right;color:#60a5fa;font-weight:700;">{it.get("n", 0)}</td>'
+                f'<td>{third}</td></tr>'
+            )
+        return "".join(out)
+
+    longest_rows = []
+    for r in data.get("longest", []):
+        route = f'{r.get("origin_icao") or "—"} → {r.get("dest_icao") or "—"}'
+        longest_rows.append(
+            f'<tr><td>{r.get("tail_number") or "—"}</td><td>{r.get("type") or "—"}</td>'
+            f'<td>{route}</td><td style="text-align:right;color:#f59e0b;font-weight:700;">{int(r.get("distance_nm") or 0):,} nm</td>'
+            f'<td>{r.get("operator") or "Unknown"}</td><td>{(r.get("arrived_utc") or "")[:16].replace("T", " ")} UTC</td></tr>'
+        )
+    longest_html = "".join(longest_rows) or '<tr><td colspan="6" style="text-align:center;color:#64748b;padding:14px;">No distance data yet</td></tr>'
+    avg = f'{data["avg_distance"]} nm' if data.get("avg_distance") else "—"
+    route_rows = simple_rows(data["top_routes"], third_fn=lambda x: f'{int(x.get("avg_nm") or 0)} nm' if x.get("avg_nm") else "—")
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title} — A320/737 Sightings</title><meta http-equiv="refresh" content="120">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}} body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;padding:20px}} a{{color:#60a5fa}} h1{{font-size:28px;margin-bottom:6px}} .sub{{color:#94a3b8;margin-bottom:18px}} .nav{{margin-bottom:18px;font-size:14px}}
+.stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}} .stat,.card{{background:#1e293b;border-radius:8px;padding:16px}} .label{{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px}} .value{{font-size:26px;font-weight:800;color:#60a5fa}}
+.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-bottom:18px}} h2{{font-size:15px;margin-bottom:10px}} table{{width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden}} th{{background:#334155;color:#94a3b8;font-size:11px;text-transform:uppercase;text-align:left;padding:9px}} td{{padding:9px;border-bottom:1px solid #334155;font-size:13px}} tr:hover{{background:#243244}}
+</style></head><body>
+<div class="nav"><a href="{back_href}">← {back_label}</a> &nbsp;·&nbsp; <a href="/">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights">NA Insights</a> &nbsp;·&nbsp; <a href="/eu">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights">EU Insights</a></div>
+<h1>{title}</h1><div class="sub">A320/737-family operational patterns · region: <strong>{region}</strong> · auto-refreshes every 2 min</div>
+<div class="stats"><div class="stat"><div class="label">Last 24h</div><div class="value">{stats['today']}</div></div><div class="stat"><div class="label">Last 7 days</div><div class="value">{stats['week']}</div></div><div class="stat"><div class="label">All Time</div><div class="value">{data['total']}</div></div><div class="stat"><div class="label">Active Tails</div><div class="value">{data['active_tails']}</div></div><div class="stat"><div class="label">Avg Distance</div><div class="value">{avg}</div></div></div>
+<div class="grid"><div class="card"><h2>Top Aircraft Variants</h2><table><thead><tr><th>Variant</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_types'])}</tbody></table></div><div class="card"><h2>Top Operators</h2><table><thead><tr><th>Operator</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_operators'])}</tbody></table></div><div class="card"><h2>Top Arrival Airports</h2><table><thead><tr><th>Airport</th><th style="text-align:right;">Arrivals</th><th></th></tr></thead><tbody>{simple_rows(data['top_airports'])}</tbody></table></div><div class="card"><h2>Top Routes</h2><table><thead><tr><th>Route</th><th style="text-align:right;">Flights</th><th>Avg Distance</th></tr></thead><tbody>{route_rows}</tbody></table></div></div>
+<h2>Longest Observed Flights</h2><table><thead><tr><th>Tail</th><th>Type</th><th>Route</th><th style="text-align:right;">Distance</th><th>Operator</th><th>Arrived</th></tr></thead><tbody>{longest_html}</tbody></table>
+</body></html>"""
+
+
 @app.get("/")
 def dashboard():
     # Pagination: per_page in {25, 50, 100}, page ≥ 1
@@ -3013,8 +3059,14 @@ def dashboard():
     <a href="/plan" style="display:inline-block;background:#4f46e5;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
       🛫 Daily Flight Plan
     </a>
+    <a href="/insights" style="display:inline-block;background:#1d4ed8;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
+      📊 NA Insights
+    </a>
     <a href="/eu" title="EU/UK sightings stream — same layout as this page, filtered to Europe/UK landings" style="display:inline-block;background:#4338ca;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
       EU Sightings
+    </a>
+    <a href="/eu-insights" style="display:inline-block;background:#6d28d9;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
+      📊 EU Insights
     </a>
     {_watch_pill_html()}
   </div>
@@ -3173,6 +3225,12 @@ def eu_dashboard():
   <div style="margin-bottom:4px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
     <a href="/" style="display:inline-block;background:#1e293b;color:#e2e8f0;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid #334155;">
       ← NA Sightings
+    </a>
+    <a href="/insights" style="display:inline-block;background:#1d4ed8;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
+      📊 NA Insights
+    </a>
+    <a href="/eu-insights" style="display:inline-block;background:#6d28d9;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
+      📊 EU Insights
     </a>
     {_watch_pill_html()}
   </div>
@@ -4029,7 +4087,7 @@ def mustang_insights_page():
 
 @app.get("/insights")
 def insights():
-    return redirect("/", code=302)
+    return _airline_insights_html("NA", "NA Insights", "/", "NA Sightings")
     # Region toggle (top-of-page filter): 'ALL' (default), 'NA', 'EU_UK', 'OTHER'.
     region_raw = (request.args.get("region", "") or "").strip().upper()
     region = region_raw if region_raw in ("NA", "EU_UK", "OTHER") else None
@@ -4735,7 +4793,7 @@ new Chart(document.getElementById('climbTopChart'), {{
 
 @app.get("/eu-insights")
 def eu_insights():
-    return redirect("/eu", code=302)
+    return _airline_insights_html("EU_UK", "EU Insights", "/eu", "EU Sightings")
     """
     EU-only analytics: flight-level distribution, ICAO semicircular
     rule compliance, country pairs, EU operator leaderboard, EU-scaled
@@ -5167,4 +5225,3 @@ new Chart(document.getElementById('distChart'), {{
 </script>
 </body>
 </html>"""
-

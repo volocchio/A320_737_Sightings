@@ -31,6 +31,7 @@ OPENSKY_PASSWORD: str = _optional("OPENSKY_PASSWORD")
 # new sightings at watched airports are posted as Adaptive Cards.
 TEAMS_WEBHOOK_URL: str = _optional("TEAMS_WEBHOOK_URL")
 TEAMS_ENABLED: bool = bool(TEAMS_WEBHOOK_URL)
+TEAMS_MUTED: bool = _optional("TEAMS_MUTED", "false").lower() in {"1", "true", "yes", "on"}
 
 # Optional separate webhook for the 4 PM daily USAGE DIGEST card. If set,
 # `notify_daily_digest()` posts here instead of TEAMS_WEBHOOK_URL — use this

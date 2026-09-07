@@ -92,6 +92,9 @@ def send(payload: dict, webhook_url: str | None = None) -> bool:
     if not url:
         log.debug("Teams disabled (no webhook URL); skipping notify")
         return False
+    if getattr(config, "TEAMS_MUTED", False):
+        log.info("Teams muted (TEAMS_MUTED=true); skipping notify")
+        return False
     try:
         resp = requests.post(url, json=payload, timeout=15)
         if resp.status_code >= 400:

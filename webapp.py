@@ -3025,7 +3025,7 @@ def dashboard():
   </div>
   </div> <!-- /sticky-top -->
 
-  <!-- Airline sightings stream: inherited ATLAS prospect/fleet panels removed. -->
+  <!-- Airline sightings stream. -->
 
   <!-- Pagination controls (top) -->
   {_pagination_html(page, total_pages, per_page, total_sightings)}
@@ -4040,6 +4040,7 @@ def mustang_insights_page():
 
 @app.get("/insights")
 def insights():
+    return redirect("/", code=302)
     # Region toggle (top-of-page filter): 'ALL' (default), 'NA', 'EU_UK', 'OTHER'.
     region_raw = (request.args.get("region", "") or "").strip().upper()
     region = region_raw if region_raw in ("NA", "EU_UK", "OTHER") else None

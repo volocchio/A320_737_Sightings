@@ -2899,6 +2899,15 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
     route_map = database.get_route_map_data(top_n=80, region=region)
     route_airports_js = _json.dumps(route_map.get("airports", []))
     route_routes_js = _json.dumps(route_map.get("routes", []))
+    type_labels_js = _json.dumps([x.get("label") for x in data.get("top_types", [])[:10]])
+    type_counts_js = _json.dumps([x.get("n", 0) for x in data.get("top_types", [])[:10]])
+    op_labels_js = _json.dumps([x.get("label") for x in data.get("top_operators", [])[:10]])
+    op_counts_js = _json.dumps([x.get("n", 0) for x in data.get("top_operators", [])[:10]])
+    airport_labels_js = _json.dumps([x.get("label") for x in data.get("top_airports", [])[:10]])
+    airport_counts_js = _json.dumps([x.get("n", 0) for x in data.get("top_airports", [])[:10]])
+    dist_labels_js = _json.dumps(data.get("dist_hist_labels", []))
+    dist_counts_js = _json.dumps(data.get("dist_hist", []))
+    block_scatter_js = _json.dumps(data.get("block_scatter", []))
     map_center_lat = 52 if region == "EU_UK" else 39
     map_center_lon = 10 if region == "EU_UK" else -96
     map_zoom = 4 if region == "EU_UK" else 4
@@ -2934,17 +2943,31 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
 <title>{title} — A320/737 Sightings</title><meta http-equiv="refresh" content="120">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}} body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;padding:20px}} a{{color:#60a5fa}} h1{{font-size:28px;margin-bottom:6px}} .sub{{color:#94a3b8;margin-bottom:18px}} .nav{{margin-bottom:18px;font-size:14px}}
 .stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}} .stat,.card{{background:#1e293b;border-radius:8px;padding:16px}} .label{{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px}} .value{{font-size:26px;font-weight:800;color:#60a5fa}}
-.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-bottom:18px}} #routeMap{{height:420px;border-radius:8px;border:1px solid #334155;margin-bottom:18px;background:#020617}} h2{{font-size:15px;margin-bottom:10px}} table{{width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden}} th{{background:#334155;color:#94a3b8;font-size:11px;text-transform:uppercase;text-align:left;padding:9px}} td{{padding:9px;border-bottom:1px solid #334155;font-size:13px}} tr:hover{{background:#243244}}
+.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-bottom:18px}} #routeMap{{height:420px;border-radius:8px;border:1px solid #334155;margin-bottom:18px;background:#020617}} .chartbox{{height:320px}} h2{{font-size:15px;margin-bottom:10px}} table{{width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden}} th{{background:#334155;color:#94a3b8;font-size:11px;text-transform:uppercase;text-align:left;padding:9px}} td{{padding:9px;border-bottom:1px solid #334155;font-size:13px}} tr:hover{{background:#243244}}
 </style></head><body>
 <div class="nav"><a href="{back_href}">← {back_label}</a> &nbsp;·&nbsp; <a href="/">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights">NA Insights</a> &nbsp;·&nbsp; <a href="/eu">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights">EU Insights</a></div>
 <h1>{title}</h1><div class="sub">A320/737-family operational patterns · region: <strong>{region}</strong> · auto-refreshes every 2 min</div>
 <div class="stats"><div class="stat"><div class="label">Last 24h</div><div class="value">{stats['today']}</div></div><div class="stat"><div class="label">Last 7 days</div><div class="value">{stats['week']}</div></div><div class="stat"><div class="label">All Time</div><div class="value">{data['total']}</div></div><div class="stat"><div class="label">Active Tails</div><div class="value">{data['active_tails']}</div></div><div class="stat"><div class="label">Avg Distance</div><div class="value">{avg}</div></div></div>
-<h2>Route Map</h2><div id="routeMap"></div><div class="grid"><div class="card"><h2>Top Aircraft Variants</h2><table><thead><tr><th>Variant</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_types'])}</tbody></table></div><div class="card"><h2>Top Operators</h2><table><thead><tr><th>Operator</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_operators'])}</tbody></table></div><div class="card"><h2>Top Arrival Airports</h2><table><thead><tr><th>Airport</th><th style="text-align:right;">Arrivals</th><th></th></tr></thead><tbody>{simple_rows(data['top_airports'])}</tbody></table></div><div class="card"><h2>Top Routes</h2><table><thead><tr><th>Route</th><th style="text-align:right;">Flights</th><th>Avg Distance</th></tr></thead><tbody>{route_rows}</tbody></table></div></div>
+<div class="grid"><div class="card chartbox"><h2>Aircraft Mix</h2><canvas id="typeChart"></canvas></div><div class="card chartbox"><h2>Top Operators</h2><canvas id="operatorChart"></canvas></div><div class="card chartbox"><h2>Arrival Airports</h2><canvas id="airportChart"></canvas></div><div class="card chartbox"><h2>Distance Distribution</h2><canvas id="distanceChart"></canvas></div><div class="card chartbox" style="grid-column:1/-1;"><h2>Block Speed vs Distance</h2><canvas id="blockChart"></canvas></div></div><h2>Route Map</h2><div id="routeMap"></div><div class="grid"><div class="card"><h2>Top Aircraft Variants</h2><table><thead><tr><th>Variant</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_types'])}</tbody></table></div><div class="card"><h2>Top Operators</h2><table><thead><tr><th>Operator</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_operators'])}</tbody></table></div><div class="card"><h2>Top Arrival Airports</h2><table><thead><tr><th>Airport</th><th style="text-align:right;">Arrivals</th><th></th></tr></thead><tbody>{simple_rows(data['top_airports'])}</tbody></table></div><div class="card"><h2>Top Routes</h2><table><thead><tr><th>Route</th><th style="text-align:right;">Flights</th><th>Avg Distance</th></tr></thead><tbody>{route_rows}</tbody></table></div></div>
 <h2>Longest Observed Flights</h2><table><thead><tr><th>Tail</th><th>Type</th><th>Route</th><th style="text-align:right;">Distance</th><th>Operator</th><th>Arrived</th></tr></thead><tbody>{longest_html}</tbody></table>
 <script>
+const typeLabels = {type_labels_js}, typeCounts = {type_counts_js};
+const opLabels = {op_labels_js}, opCounts = {op_counts_js};
+const airportLabels = {airport_labels_js}, airportCounts = {airport_counts_js};
+const distLabels = {dist_labels_js}, distCounts = {dist_counts_js};
+const blockScatter = {block_scatter_js};
+const chartOpts = {{ responsive:true, maintainAspectRatio:false, plugins:{{legend:{{labels:{{color:'#cbd5e1'}}}}}}, scales:{{x:{{ticks:{{color:'#94a3b8'}},grid:{{color:'#334155'}}}},y:{{ticks:{{color:'#94a3b8'}},grid:{{color:'#334155'}}}}}} }};
+function bar(id, labels, data, label, color) {{ const el=document.getElementById(id); if(!el || typeof Chart==='undefined') return; new Chart(el, {{type:'bar', data:{{labels, datasets:[{{label, data, backgroundColor:color, borderColor:color}}]}}, options:chartOpts}}); }}
+bar('typeChart', typeLabels, typeCounts, 'Flights', '#60a5fa');
+bar('operatorChart', opLabels, opCounts, 'Flights', '#22c55e');
+bar('airportChart', airportLabels, airportCounts, 'Arrivals', '#f59e0b');
+bar('distanceChart', distLabels, distCounts, 'Flights', '#a78bfa');
+const bel=document.getElementById('blockChart'); if(bel && typeof Chart!=='undefined') new Chart(bel, {{type:'scatter', data:{{datasets:[{{label:'Flights', data:blockScatter, pointRadius:3, pointBackgroundColor:'#38bdf8'}}]}}, options:{{...chartOpts, parsing:false, scales:{{x:{{title:{{display:true,text:'Distance (nm)',color:'#cbd5e1'}},ticks:{{color:'#94a3b8'}},grid:{{color:'#334155'}}}},y:{{title:{{display:true,text:'Block speed (kt)',color:'#cbd5e1'}},ticks:{{color:'#94a3b8'}},grid:{{color:'#334155'}}}}}}}} }});
+
 const routeAirports = {route_airports_js};
 const routeRoutes = {route_routes_js};
 (function() {{
@@ -4341,6 +4364,7 @@ def insights():
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     * {{ box-sizing:border-box; margin:0; padding:0; }}
     body {{ background:#0f172a; color:#e2e8f0; font-family:Arial,sans-serif; padding:24px; }}

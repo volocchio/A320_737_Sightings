@@ -2561,11 +2561,34 @@ def get_airline_insights(region: str = "NA", limit: int = 15) -> dict:
             WHERE region=? AND distance_nm IS NOT NULL AND distance_nm > 0
             ORDER BY distance_nm DESC LIMIT ?
         """, (region, limit)).fetchall()]
+        metric_rows = [dict(r) for r in conn.execute("""
+            SELECT distance_nm, departed_utc, arrived_utc,
+                   COALESCE(NULLIF(ac_subvariant,''), NULLIF(ac_type,''), 'Unknown') AS type
+            FROM v_sightings_dedup
+            WHERE region=? AND distance_nm IS NOT NULL AND distance_nm > 0
+              AND departed_utc IS NOT NULL AND arrived_utc IS NOT NULL
+        """, (region,)).fetchall()]
+    distances = [float(r["distance_nm"]) for r in metric_rows if r.get("distance_nm")]
+    bin_size = 250 if region == "EU_UK" else 500
+    max_bin = max(1, int((max(distances) if distances else bin_size) // bin_size) + 1)
+    dist_labels = [f"{i*bin_size}-{(i+1)*bin_size}" for i in range(max_bin)]
+    dist_hist = [0] * max_bin
+    scatter = []
+    for r in metric_rows:
+        d = float(r.get("distance_nm") or 0)
+        if d <= 0:
+            continue
+        idx = min(int(d // bin_size), max_bin - 1)
+        dist_hist[idx] += 1
+        dur = _duration_h(r.get("departed_utc"), r.get("arrived_utc"))
+        if dur and 0.1 <= dur <= 20:
+            scatter.append({"x": round(d), "y": round(d / dur), "type": r.get("type") or "Unknown"})
     return {
         "region": region, "total": total, "recent_24h": recent_24h, "active_tails": active_tails,
         "avg_distance": round(avg_distance) if avg_distance else None,
         "top_types": top_types, "top_operators": top_operators, "top_airports": top_airports,
         "top_routes": top_routes, "longest": longest,
+        "dist_hist_labels": dist_labels, "dist_hist": dist_hist, "block_scatter": scatter[:500],
     }
 
 def get_mustang_insights() -> dict:

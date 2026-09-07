@@ -4101,11 +4101,11 @@ def export_prospects_csv():
 
 @app.get("/mustangs")
 def mustangs_page():
-    return redirect(url_for("index"))
+    return redirect("/", code=302)
 
 @app.get("/mustang-insights")
 def mustang_insights_page():
-    return redirect(url_for("index"))
+    return redirect("/", code=302)
 
 @app.get("/insights")
 def insights():

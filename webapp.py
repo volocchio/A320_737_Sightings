@@ -2419,12 +2419,8 @@ def _chat_widget_html() -> str:
         "<strong>Examples:</strong><br>"
         "\u2022 <em>who are my top prospects this month</em><br>"
         "\u2022 <em>who owns N123AB and their phone number</em><br>"
-        "\u2022 <em>fuel-stop chains for CJ2 in Europe</em><br>"
         "\u2022 <em>tell me about N123AB</em><br>"
-        "\u2022 <em>top CJ3 operators this month</em><br>"
-        "\u2022 <em>EU CJ activity in the last 30 days</em><br>"
-        "\u2022 <em>Mustang up-purchase signals</em><br>"
-        "\u2022 <em>post today's CJ summary to Teams</em>"
+        "\u2022 <em>post today's A320/737 summary to Teams</em>"
     )
     return f"""
 <style>

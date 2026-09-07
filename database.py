@@ -185,10 +185,9 @@ def init_db() -> None:
     # Same flight reported by multiple sources (FlightAware + ADSB Exchange +
     # OpenSky) shouldn't show up as multiple rows on the dashboard. Group by
     # (tail, origin, dest, date) and keep the most-enriched source.
-    # Scope filter: this view is the canonical source for ATLAS-facing math,
-    # so it excludes adjacent-tier rows (Mustang/CJ4). Consumers that need
-    # adjacent-tier data (Mustang chain detection, operator fleet mix) go to
-    # the raw sightings table or v_sightings_dedup_all instead. NULL
+    # Scope filter: this view is the canonical dashboard source. For this
+    # A320/737 clone it includes generic 'tracked' rows as well as legacy
+    # 'atlas' rows, while still excluding adjacent/up-purchase rows. NULL
     # scope_tier is treated as 'atlas' for backwards compatibility.
     # Always DROP + CREATE so the definition can evolve.
     with _connect() as conn:
@@ -212,7 +211,7 @@ def init_db() -> None:
                          id DESC
                      ) AS _rn
               FROM sightings s
-              WHERE (s.scope_tier IS NULL OR s.scope_tier = 'atlas')
+              WHERE (s.scope_tier IS NULL OR s.scope_tier IN ('atlas', 'tracked'))
             )
             WHERE _rn = 1
         """)

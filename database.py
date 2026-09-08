@@ -3031,6 +3031,80 @@ def get_airline_opportunity_feed(
     return out[:limit]
 
 
+def get_airline_mission_bins(region: str | None = "NA", family: str | None = "A320") -> list[dict]:
+    """
+    Observed mission bins for simulator coupling.
+
+    These are not benefit estimates yet. They summarize actual sighting distance
+    and altitude buckets so an offline Tamarack simulator batch can run a small
+    representative matrix instead of trying to simulate every live row.
+    """
+    region_sql = " AND region = ?" if region in ("NA", "EU_UK", "OTHER") else ""
+    region_args: tuple = (region,) if region_sql else ()
+    family_sql, family_args = family_where_clause(family)
+    rows_sql = f"""
+        SELECT distance_nm,
+               COALESCE(sustained_top_alt_ft, top_altitude_ft, initial_cruise_alt_ft) AS alt_ft
+        FROM v_sightings_dedup
+        WHERE distance_nm IS NOT NULL AND distance_nm > 0{region_sql}{family_sql}
+    """
+    with _connect() as conn:
+        rows = [dict(r) for r in conn.execute(rows_sql, (*region_args, *family_args)).fetchall()]
+
+    dist_bins = [
+        (0, 250, "0–250 nm", 125),
+        (250, 500, "250–500 nm", 375),
+        (500, 750, "500–750 nm", 625),
+        (750, 1000, "750–1000 nm", 875),
+        (1000, 1500, "1000–1500 nm", 1250),
+        (1500, 100000, "1500+ nm", 1750),
+    ]
+    alt_bins = [
+        (0, 25000, "< FL250", 23000),
+        (25000, 31000, "FL250–310", 29000),
+        (31000, 35000, "FL310–350", 33000),
+        (35000, 39000, "FL350–390", 37000),
+        (39000, 100000, "FL390+", 39000),
+    ]
+    buckets: dict[tuple[str, str], dict] = {}
+    for r in rows:
+        dist = float(r.get("distance_nm") or 0)
+        alt = int(r.get("alt_ft") or 0)
+        d_bin = next((b for b in dist_bins if b[0] <= dist < b[1]), None)
+        a_bin = next((b for b in alt_bins if b[0] <= alt < b[1]), None) if alt else None
+        if not d_bin or not a_bin:
+            continue
+        key = (d_bin[2], a_bin[2])
+        b = buckets.setdefault(key, {
+            "distance_bin": d_bin[2],
+            "altitude_bin": a_bin[2],
+            "representative_distance_nm": d_bin[3],
+            "representative_altitude_ft": a_bin[3],
+            "count": 0,
+            "sum_distance_nm": 0.0,
+            "sum_altitude_ft": 0,
+        })
+        b["count"] += 1
+        b["sum_distance_nm"] += dist
+        b["sum_altitude_ft"] += alt
+
+    out = []
+    for b in buckets.values():
+        n = b["count"] or 1
+        out.append({
+            "distance_bin": b["distance_bin"],
+            "altitude_bin": b["altitude_bin"],
+            "representative_distance_nm": b["representative_distance_nm"],
+            "representative_altitude_ft": b["representative_altitude_ft"],
+            "count": b["count"],
+            "avg_distance_nm": round(b["sum_distance_nm"] / n),
+            "avg_altitude_ft": round(b["sum_altitude_ft"] / n),
+            "sim_status": "pending_a320_config",
+        })
+    out.sort(key=lambda x: (-x["count"], x["representative_distance_nm"], x["representative_altitude_ft"]))
+    return out[:12]
+
+
 def get_m2_yaw_damper_suspects(
     days:            int = 90,
     min_distance_nm: int = 300,

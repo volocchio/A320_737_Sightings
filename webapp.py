@@ -303,6 +303,22 @@ def _family_filter_html(active: str | None, base_path: str) -> str:
     return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px;align-items:center;"><span style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.8px;">Family</span>' + pill("All", None) + pill("A320 Family", "A320") + pill("737 Family", "B737") + '</div>'
 
 
+def _mission_bins_html(bins: list[dict]) -> str:
+    if not bins:
+        return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;">No distance/altitude bins yet for this filter.</div></div>'
+    rows = []
+    for b in bins[:10]:
+        rows.append(
+            f'<tr><td>{html.escape(b.get("distance_bin") or "—")}</td>'
+            f'<td>{html.escape(b.get("altitude_bin") or "—")}</td>'
+            f'<td style="text-align:right;color:#60a5fa;font-weight:800;">{int(b.get("count") or 0):,}</td>'
+            f'<td style="text-align:right;">{int(b.get("avg_distance_nm") or 0):,} nm</td>'
+            f'<td style="text-align:right;">FL{round((b.get("avg_altitude_ft") or 0)/100)}</td>'
+            f'<td><span style="color:#f59e0b;font-weight:700;">Awaiting A320 sim config</span></td></tr>'
+        )
+    return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">Observed flights grouped into representative simulator cases. This is the handoff layer for Tamarack fuel/WAT benefit runs.</div><table><thead><tr><th>Stage Length</th><th>Altitude Band</th><th style="text-align:right;">Flights</th><th style="text-align:right;">Avg Dist</th><th style="text-align:right;">Avg FL</th><th>Status</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table></div>'
+
+
 def _opportunity_feed_html(items: list[dict]) -> str:
     if not items:
         return ""
@@ -2969,6 +2985,8 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
     compare_region = "EU_UK" if region == "NA" else "NA"
     compare = database.get_airline_insights(region=compare_region, limit=5, family=family)
     stats = database.get_period_stats(region=region, family=family)
+    mission_bins = database.get_airline_mission_bins(region=region, family=family or "A320")
+    mission_bins_html = _mission_bins_html(mission_bins)
     route_map = database.get_route_map_data(top_n=80, region=region, family=family)
     route_airports_js = _json.dumps(route_map.get("airports", []))
     route_routes_js = _json.dumps(route_map.get("routes", []))
@@ -3038,6 +3056,7 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
 <div class="nav"><a href="{back_href}">← {back_label}</a> &nbsp;·&nbsp; <a href="/">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights">NA Insights</a> &nbsp;·&nbsp; <a href="/eu">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights">EU Insights</a></div>
 <h1>{title}</h1><div class="sub">{fam_label} operational patterns · region: <strong>{region}</strong> · auto-refreshes every 2 min</div>{fam_filter}
 <div class="card" style="margin-bottom:18px;border-left:4px solid #22c55e;"><h2>Tamarack Mission-Benefit Setup</h2><div style="color:#cbd5e1;line-height:1.45;">{mission_note}</div></div>
+{mission_bins_html}
 <div class="stats"><div class="stat"><div class="label">Last 24h</div><div class="value">{stats['today']}</div></div><div class="stat"><div class="label">Last 7 days</div><div class="value">{stats['week']}</div></div><div class="stat"><div class="label">All Time</div><div class="value">{data['total']}</div></div><div class="stat"><div class="label">Active Tails</div><div class="value">{data['active_tails']}</div></div><div class="stat"><div class="label">Avg Distance</div><div class="value">{avg}</div></div><div class="stat"><div class="label">Avg Flight Level</div><div class="value">{avg_fl}</div></div><div class="stat"><div class="label">Median Flight Level</div><div class="value">{med_fl}</div></div></div><div class="card" style="margin-bottom:18px;"><h2>NA vs EU altitude context</h2><div style="color:#cbd5e1;line-height:1.45;">Current page: <strong>{region}</strong> avg cruise/top altitude <strong>{avg_fl}</strong>, avg distance <strong>{avg}</strong>. Comparison region <strong>{compare_region}</strong>: avg cruise/top altitude <strong>{cmp_avg_fl}</strong>, avg distance <strong>{cmp_avg_dist}</strong>. EU short-haul flights often cruise lower because of airspace/ATC constraints; treat low FL as operational environment unless distance and route suggest otherwise.</div></div>
 <div class="grid"><div class="card chartbox"><h2>Flight Level Distribution</h2><canvas id="flChart"></canvas></div><div class="card chartbox"><h2>Aircraft Mix</h2><canvas id="typeChart"></canvas></div><div class="card chartbox"><h2>Top Operators</h2><canvas id="operatorChart"></canvas></div><div class="card chartbox"><h2>Arrival Airports</h2><canvas id="airportChart"></canvas></div><div class="card chartbox"><h2>Distance Distribution</h2><canvas id="distanceChart"></canvas></div><div class="card chartbox" style="grid-column:1/-1;"><h2>Block Speed vs Distance</h2><canvas id="blockChart"></canvas></div></div><h2>Route Map</h2><div id="routeMap"></div><div class="grid"><div class="card"><h2>Top Aircraft Variants</h2><table><thead><tr><th>Variant</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_types'])}</tbody></table></div><div class="card"><h2>Top Operators</h2><table><thead><tr><th>Operator</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_operators'])}</tbody></table></div><div class="card"><h2>Top Arrival Airports</h2><table><thead><tr><th>Airport</th><th style="text-align:right;">Arrivals</th><th></th></tr></thead><tbody>{simple_rows(data['top_airports'])}</tbody></table></div><div class="card"><h2>Top Routes</h2><table><thead><tr><th>Route</th><th style="text-align:right;">Flights</th><th>Avg Distance</th></tr></thead><tbody>{route_rows}</tbody></table></div></div>
 <h2>Longest Observed Flights</h2><table><thead><tr><th>Tail</th><th>Type</th><th>Route</th><th style="text-align:right;">Distance</th><th>Operator</th><th>Arrived</th></tr></thead><tbody>{longest_html}</tbody></table>

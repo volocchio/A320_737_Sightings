@@ -45,6 +45,28 @@ def resolve_tracking_url(
         return _flightaware_tracking_url(flight_id, tail_number) or (tracking_url or "")
     return tracking_url or ""
 
+A320_FAMILY_TYPES = {"A318", "A319", "A320", "A321", "A19N", "A20N", "A21N"}
+B737_FAMILY_TYPES = {"B736", "B737", "B738", "B739", "B37M", "B38M", "B39M", "B3XM"}
+
+
+def normalize_family(family: str | None) -> str | None:
+    fam = (family or "").strip().upper().replace("-", "")
+    if fam in {"A320", "AIRBUS", "AIRBUS320"}:
+        return "A320"
+    if fam in {"737", "B737", "BOEING", "BOEING737"}:
+        return "B737"
+    return None
+
+
+def family_where_clause(family: str | None, alias: str = "") -> tuple[str, tuple]:
+    fam = normalize_family(family)
+    if not fam:
+        return "", ()
+    col = f"{alias}.ac_type" if alias else "ac_type"
+    types = sorted(A320_FAMILY_TYPES if fam == "A320" else B737_FAMILY_TYPES)
+    placeholders = ",".join("?" for _ in types)
+    return f" AND UPPER(COALESCE({col}, '')) IN ({placeholders})", tuple(types)
+
 
 def init_db() -> None:
     """Create tables if they don't exist."""
@@ -729,34 +751,35 @@ def get_fleet_comparison() -> dict:
     }
 
 
-def get_period_stats(region: str | None = None) -> dict:
-    """Return sighting counts for common time periods. Optionally region-scoped."""
+def get_period_stats(region: str | None = None, family: str | None = None) -> dict:
+    """Return sighting counts for common time periods. Optionally region/family-scoped."""
     now = datetime.now(timezone.utc)
     region_sql = " AND region = ?" if region else ""
     region_args: tuple = (region,) if region else ()
+    family_sql, family_args = family_where_clause(family)
 
     def _count(hours: float) -> int:
         cutoff = (now - timedelta(hours=hours)).isoformat()
         with _connect() as conn:
             row = conn.execute(
-                f"SELECT COUNT(*) FROM v_sightings_dedup WHERE arrived_utc >= ?{region_sql}",
-                (cutoff, *region_args),
+                f"SELECT COUNT(*) FROM v_sightings_dedup WHERE arrived_utc >= ?{region_sql}{family_sql}",
+                (cutoff, *region_args, *family_args),
             ).fetchone()
         return row[0] if row else 0
 
     ytd_cutoff = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
     with _connect() as conn:
         ytd = conn.execute(
-            f"SELECT COUNT(*) FROM v_sightings_dedup WHERE arrived_utc >= ?{region_sql}",
-            (ytd_cutoff, *region_args),
+            f"SELECT COUNT(*) FROM v_sightings_dedup WHERE arrived_utc >= ?{region_sql}{family_sql}",
+            (ytd_cutoff, *region_args, *family_args),
         ).fetchone()[0]
         if region:
             total = conn.execute(
-                "SELECT COUNT(*) FROM v_sightings_dedup WHERE region = ?",
-                (region,),
+                f"SELECT COUNT(*) FROM v_sightings_dedup WHERE region = ?{family_sql}",
+                (region, *family_args),
             ).fetchone()[0]
         else:
-            total = conn.execute("SELECT COUNT(*) FROM v_sightings_dedup").fetchone()[0]
+            total = conn.execute(f"SELECT COUNT(*) FROM v_sightings_dedup WHERE 1=1{family_sql}", family_args).fetchone()[0]
 
     return {
         "hour":  _count(1),
@@ -2089,7 +2112,7 @@ def get_operator_pursuit(top_n: int = 25, days: int = 30) -> list[dict]:
     return out[:top_n]
 
 
-def get_route_map_data(top_n: int = 80, region: str | None = None) -> dict:
+def get_route_map_data(top_n: int = 80, region: str | None = None, family: str | None = None) -> dict:
     """
     Top N routes (origin → destination) over the full history, with lat/lon
     coordinates resolved for each endpoint. Returns:
@@ -2098,11 +2121,13 @@ def get_route_map_data(top_n: int = 80, region: str | None = None) -> dict:
     Useful for plotting a great-circle arc map.
 
     Optional ``region`` filter (``'NA'`` | ``'EU_UK'`` | ``'OTHER'``) narrows
-    the underlying dataset to a single sales-region bucket.
+    the underlying dataset to a single sales-region bucket. Optional ``family``
+    filter narrows to A320-family or Boeing 737-family ICAO type codes.
     """
     from airports import icao_coords, _airports as _ap_list   # noqa: F401
     region_sql = " AND region = ?" if region else ""
     region_args: tuple = (region,) if region else ()
+    family_sql, family_args = family_where_clause(family)
     with _connect() as conn:
         route_rows = conn.execute(
             f"""
@@ -2111,12 +2136,12 @@ def get_route_map_data(top_n: int = 80, region: str | None = None) -> dict:
             WHERE origin_icao IS NOT NULL AND origin_icao != ''
               AND dest_icao   IS NOT NULL AND dest_icao   != ''
               AND (UPPER(ac_type) != 'C25C' AND UPPER(IFNULL(ac_subvariant,'')) != 'CJ4')
-              {region_sql}
+              {region_sql}{family_sql}
             GROUP BY o, d
             ORDER BY n DESC
             LIMIT ?
             """,
-            (*region_args, top_n),
+            (*region_args, *family_args, top_n),
         ).fetchall()
     routes: list[dict] = []
     icaos: set[str] = set()
@@ -2525,50 +2550,52 @@ def get_tail_detail(tail: str, days: int = 180) -> dict | None:
 
 
 
-def get_airline_insights(region: str = "NA", limit: int = 15) -> dict:
-    """Airline-safe insight rollup for A320/737 sightings. No ATLAS/CJ logic."""
+def get_airline_insights(region: str = "NA", limit: int = 15, family: str | None = None) -> dict:
+    """Airline-safe insight rollup for A320/737 sightings. Optional A320/B737 family filter."""
     region = region if region in ("NA", "EU_UK", "OTHER") else "NA"
+    family = normalize_family(family)
+    family_sql, family_args = family_where_clause(family)
     with _connect() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM v_sightings_dedup WHERE region=?", (region,)).fetchone()[0]
-        recent_24h = conn.execute("SELECT COUNT(*) FROM v_sightings_dedup WHERE region=? AND arrived_utc >= datetime('now','-24 hours')", (region,)).fetchone()[0]
-        active_tails = conn.execute("SELECT COUNT(DISTINCT tail_number) FROM v_sightings_dedup WHERE region=? AND tail_number IS NOT NULL AND tail_number!=''", (region,)).fetchone()[0]
-        avg_distance = conn.execute("SELECT AVG(distance_nm) FROM v_sightings_dedup WHERE region=? AND distance_nm IS NOT NULL AND distance_nm > 0", (region,)).fetchone()[0]
-        top_types = [dict(r) for r in conn.execute("""
+        total = conn.execute(f"SELECT COUNT(*) FROM v_sightings_dedup WHERE region=?{family_sql}", (region, *family_args)).fetchone()[0]
+        recent_24h = conn.execute(f"SELECT COUNT(*) FROM v_sightings_dedup WHERE region=?{family_sql} AND arrived_utc >= datetime('now','-24 hours')", (region, *family_args)).fetchone()[0]
+        active_tails = conn.execute(f"SELECT COUNT(DISTINCT tail_number) FROM v_sightings_dedup WHERE region=?{family_sql} AND tail_number IS NOT NULL AND tail_number!=''", (region, *family_args)).fetchone()[0]
+        avg_distance = conn.execute(f"SELECT AVG(distance_nm) FROM v_sightings_dedup WHERE region=?{family_sql} AND distance_nm IS NOT NULL AND distance_nm > 0", (region, *family_args)).fetchone()[0]
+        top_types = [dict(r) for r in conn.execute(f"""
             SELECT COALESCE(NULLIF(ac_subvariant,''), NULLIF(ac_type,''), 'Unknown') AS label, COUNT(*) AS n
-            FROM v_sightings_dedup WHERE region=?
+            FROM v_sightings_dedup WHERE region=?{family_sql}
             GROUP BY label ORDER BY n DESC LIMIT ?
-        """, (region, limit)).fetchall()]
-        top_operators = [dict(r) for r in conn.execute("""
+        """, (region, *family_args, limit)).fetchall()]
+        top_operators = [dict(r) for r in conn.execute(f"""
             SELECT COALESCE(NULLIF(operator,''), 'Unknown') AS label, COUNT(*) AS n
-            FROM v_sightings_dedup WHERE region=?
+            FROM v_sightings_dedup WHERE region=?{family_sql}
             GROUP BY label ORDER BY n DESC LIMIT ?
-        """, (region, limit)).fetchall()]
-        top_airports = [dict(r) for r in conn.execute("""
+        """, (region, *family_args, limit)).fetchall()]
+        top_airports = [dict(r) for r in conn.execute(f"""
             SELECT COALESCE(NULLIF(dest_icao,''), 'Unknown') AS label, COUNT(*) AS n
-            FROM v_sightings_dedup WHERE region=?
+            FROM v_sightings_dedup WHERE region=?{family_sql}
             GROUP BY label ORDER BY n DESC LIMIT ?
-        """, (region, limit)).fetchall()]
-        top_routes = [dict(r) for r in conn.execute("""
+        """, (region, *family_args, limit)).fetchall()]
+        top_routes = [dict(r) for r in conn.execute(f"""
             SELECT COALESCE(NULLIF(origin_icao,''), '????') || ' → ' || COALESCE(NULLIF(dest_icao,''), '????') AS label,
                    COUNT(*) AS n, ROUND(AVG(distance_nm)) AS avg_nm
-            FROM v_sightings_dedup WHERE region=? AND origin_icao IS NOT NULL AND dest_icao IS NOT NULL
+            FROM v_sightings_dedup WHERE region=?{family_sql} AND origin_icao IS NOT NULL AND dest_icao IS NOT NULL
             GROUP BY label ORDER BY n DESC LIMIT ?
-        """, (region, limit)).fetchall()]
-        longest = [dict(r) for r in conn.execute("""
+        """, (region, *family_args, limit)).fetchall()]
+        longest = [dict(r) for r in conn.execute(f"""
             SELECT tail_number, COALESCE(NULLIF(ac_subvariant,''), NULLIF(ac_type,''), 'Unknown') AS type,
                    origin_icao, dest_icao, ROUND(distance_nm) AS distance_nm, arrived_utc, COALESCE(NULLIF(operator,''), 'Unknown') AS operator
             FROM v_sightings_dedup
-            WHERE region=? AND distance_nm IS NOT NULL AND distance_nm > 0
+            WHERE region=?{family_sql} AND distance_nm IS NOT NULL AND distance_nm > 0
             ORDER BY distance_nm DESC LIMIT ?
-        """, (region, limit)).fetchall()]
-        metric_rows = [dict(r) for r in conn.execute("""
+        """, (region, *family_args, limit)).fetchall()]
+        metric_rows = [dict(r) for r in conn.execute(f"""
             SELECT distance_nm, departed_utc, arrived_utc,
                    sustained_top_alt_ft, top_altitude_ft, initial_cruise_alt_ft,
                    COALESCE(NULLIF(ac_subvariant,''), NULLIF(ac_type,''), 'Unknown') AS type
             FROM v_sightings_dedup
-            WHERE region=? AND distance_nm IS NOT NULL AND distance_nm > 0
+            WHERE region=?{family_sql} AND distance_nm IS NOT NULL AND distance_nm > 0
               AND departed_utc IS NOT NULL AND arrived_utc IS NOT NULL
-        """, (region,)).fetchall()]
+        """, (region, *family_args)).fetchall()]
     distances = [float(r["distance_nm"]) for r in metric_rows if r.get("distance_nm")]
     altitudes = []
     for r in metric_rows:
@@ -2603,7 +2630,7 @@ def get_airline_insights(region: str = "NA", limit: int = 15) -> dict:
         vals = sorted(round(a / 100) for a in altitudes)
         med_fl = vals[len(vals)//2]
     return {
-        "region": region, "total": total, "recent_24h": recent_24h, "active_tails": active_tails,
+        "region": region, "family": family, "total": total, "recent_24h": recent_24h, "active_tails": active_tails,
         "avg_distance": round(avg_distance) if avg_distance else None,
         "top_types": top_types, "top_operators": top_operators, "top_airports": top_airports,
         "top_routes": top_routes, "longest": longest,
@@ -2892,6 +2919,116 @@ def get_weekly_hot(n: int = 5) -> list[dict]:
             (cutoff,)
         ).fetchall()}
     return [p for p in all_p if p["tail_number"] in recent_tails][:n]
+
+
+def get_airline_opportunity_feed(
+    region: str | None = "NA",
+    family: str | None = None,
+    limit: int = 10,
+    days: int = 14,
+) -> list[dict]:
+    """
+    Lightweight sales-intelligence feed for A320/737 sightings.
+
+    Uses observed mission facts only — no simulator claims yet. The goal is to
+    surface flights/operators worth asking about: long stages, high altitude,
+    lower-altitude short/medium stages, and repeat activity.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    params: list = [cutoff]
+    region_sql = ""
+    if region in ("NA", "EU_UK", "OTHER"):
+        region_sql = " AND region = ?"
+        params.append(region)
+    family_sql, family_args = family_where_clause(family)
+    params.extend(family_args)
+
+    with _connect() as conn:
+        rows = [dict(r) for r in conn.execute(
+            f"""
+            SELECT tail_number, ac_type, ac_subvariant, operator,
+                   origin_icao, dest_icao, distance_nm, arrived_utc, tracking_url,
+                   sustained_top_alt_ft, top_altitude_ft, initial_cruise_alt_ft
+            FROM v_sightings_dedup
+            WHERE arrived_utc >= ?{region_sql}{family_sql}
+            ORDER BY arrived_utc DESC
+            LIMIT 600
+            """,
+            tuple(params),
+        ).fetchall()]
+
+    op_counts: dict[str, int] = {}
+    route_counts: dict[tuple[str, str], int] = {}
+    for r in rows:
+        op = (r.get("operator") or "Unknown").strip() or "Unknown"
+        op_counts[op] = op_counts.get(op, 0) + 1
+        o, d = r.get("origin_icao") or "", r.get("dest_icao") or ""
+        if o and d:
+            key = (o, d)
+            route_counts[key] = route_counts.get(key, 0) + 1
+
+    out: list[dict] = []
+    for r in rows:
+        dist = float(r.get("distance_nm") or 0)
+        alt = r.get("sustained_top_alt_ft") or r.get("top_altitude_ft") or r.get("initial_cruise_alt_ft")
+        alt = int(alt) if alt else None
+        op = (r.get("operator") or "Unknown").strip() or "Unknown"
+        route = (r.get("origin_icao") or "—", r.get("dest_icao") or "—")
+        tags: list[str] = []
+        score = 0
+        why: list[str] = []
+
+        if dist >= 1500:
+            tags.append("LONG STAGE")
+            score += 35
+            why.append(f"{round(dist):,} nm stage length")
+        elif dist >= 900:
+            tags.append("MEDIUM/LONG")
+            score += 22
+            why.append(f"{round(dist):,} nm stage length")
+        elif 250 <= dist <= 700 and alt and alt <= 31000:
+            tags.append("LOWER ALT")
+            score += 14
+            why.append(f"{round(dist):,} nm at about FL{round(alt/100)}")
+
+        if alt and alt >= 39000:
+            tags.append("HIGH FL")
+            score += 18
+            why.append(f"observed near FL{round(alt/100)}")
+        elif alt and alt <= 30000 and dist >= 500:
+            tags.append("CONSTRAINED FL")
+            score += 12
+            why.append(f"longer leg capped near FL{round(alt/100)}")
+
+        if op_counts.get(op, 0) >= 4:
+            tags.append("REPEAT OPERATOR")
+            score += min(20, op_counts[op] * 2)
+            why.append(f"{op_counts[op]} recent sightings for operator")
+
+        route_n = route_counts.get((route[0], route[1]), 0)
+        if route_n >= 2:
+            tags.append("REPEAT ROUTE")
+            score += min(12, route_n * 3)
+
+        if not tags:
+            continue
+        out.append({
+            "score": score,
+            "tags": tags[:4],
+            "why": "; ".join(why[:3]) or "observed pattern worth reviewing",
+            "tail_number": r.get("tail_number") or "—",
+            "type": r.get("ac_subvariant") or r.get("ac_type") or "—",
+            "operator": op,
+            "origin_icao": route[0],
+            "dest_icao": route[1],
+            "distance_nm": round(dist) if dist else None,
+            "altitude_ft": alt,
+            "arrived_utc": r.get("arrived_utc"),
+            "tracking_url": r.get("tracking_url") or "",
+        })
+
+    out.sort(key=lambda x: (-x["score"], x.get("arrived_utc") or ""), reverse=False)
+    return out[:limit]
 
 
 def get_m2_yaw_damper_suspects(

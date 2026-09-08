@@ -10,6 +10,7 @@ Exposes:
 """
 
 import csv
+import html
 import io
 import json as _json
 import sqlite3
@@ -260,14 +261,78 @@ daemon_state: dict = {
 
 DB_PATH = Path(__file__).parent / "sightings.db"
 
+A320_FAMILY_TYPES = {"A318", "A319", "A320", "A321", "A19N", "A20N", "A21N"}
+B737_FAMILY_TYPES = {"B736", "B737", "B738", "B739", "B37M", "B38M", "B39M", "B3XM"}
 
-def _recent_sightings(limit: int = 500, offset: int = 0) -> list[dict]:
+
+def _normalize_family(family: str | None) -> str | None:
+    fam = (family or "").strip().upper().replace("-", "")
+    if fam in {"A320", "AIRBUS", "AIRBUS320"}:
+        return "A320"
+    if fam in {"737", "B737", "BOEING", "BOEING737"}:
+        return "B737"
+    return None
+
+
+def _family_sql(family: str | None) -> tuple[str, tuple]:
+    fam = _normalize_family(family)
+    if not fam:
+        return "", ()
+    types = sorted(A320_FAMILY_TYPES if fam == "A320" else B737_FAMILY_TYPES)
+    return " AND UPPER(COALESCE(ac_type, '')) IN (" + ",".join("?" for _ in types) + ")", tuple(types)
+
+
+def _family_label(family: str | None) -> str:
+    fam = _normalize_family(family)
+    return {"A320": "A320 Family", "B737": "Boeing 737 Family"}.get(fam, "All Narrowbodies")
+
+
+def _family_query_suffix(family: str | None) -> str:
+    fam = _normalize_family(family)
+    return f"?family={fam}" if fam else ""
+
+
+def _family_filter_html(active: str | None, base_path: str) -> str:
+    fam = _normalize_family(active)
+    def pill(label: str, value: str | None) -> str:
+        is_active = fam == value or (fam is None and value is None)
+        href = base_path + (f"?family={value}" if value else "")
+        bg = "#2563eb" if is_active else "#1e293b"
+        border = "#60a5fa" if is_active else "#334155"
+        return f'<a href="{href}" style="display:inline-block;background:{bg};border:1px solid {border};color:#fff;padding:7px 12px;border-radius:999px;font-size:12px;font-weight:700;text-decoration:none;">{label}</a>'
+    return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px;align-items:center;"><span style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.8px;">Family</span>' + pill("All", None) + pill("A320 Family", "A320") + pill("737 Family", "B737") + '</div>'
+
+
+def _opportunity_feed_html(items: list[dict]) -> str:
+    if not items:
+        return ""
+    cards = []
+    for it in items:
+        tags = "".join(f'<span style="display:inline-block;background:#334155;color:#cbd5e1;border:1px solid #475569;border-radius:999px;padding:3px 7px;font-size:10px;font-weight:800;margin-right:4px;margin-bottom:4px;">{html.escape(t)}</span>' for t in it.get("tags", []))
+        route = f'{html.escape(it.get("origin_icao") or "—")} → {html.escape(it.get("dest_icao") or "—")}'
+        dist = f'{int(it.get("distance_nm") or 0):,} nm' if it.get("distance_nm") else "—"
+        alt = f'FL{round((it.get("altitude_ft") or 0)/100)}' if it.get("altitude_ft") else "—"
+        link = it.get("tracking_url") or ""
+        link_html = f'<a href="{html.escape(link)}" target="_blank">track</a>' if link else ""
+        cards.append(
+            f'<div style="background:#111827;border:1px solid #334155;border-radius:8px;padding:10px;">'
+            f'<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;"><div>{tags}</div><div style="color:#60a5fa;font-weight:800;font-size:12px;">{int(it.get("score") or 0)}</div></div>'
+            f'<div style="font-weight:800;margin-top:4px;color:#e2e8f0;">{html.escape(it.get("operator") or "Unknown")}</div>'
+            f'<div style="color:#cbd5e1;font-size:13px;margin-top:3px;">{html.escape(it.get("tail_number") or "—")} · {html.escape(it.get("type") or "—")} · {route} · {dist} · {alt} {link_html}</div>'
+            f'<div style="color:#94a3b8;font-size:12px;margin-top:5px;line-height:1.35;">{html.escape(it.get("why") or "Observed pattern worth reviewing")}</div>'
+            f'</div>'
+        )
+    return '<section style="background:#1e293b;border-radius:10px;padding:14px;margin:0 0 18px;"><div style="display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:10px;"><h2 style="font-size:16px;margin:0;color:#e2e8f0;">Opportunity Feed</h2><div style="font-size:12px;color:#94a3b8;">Observed mission signals, not simulator claims yet</div></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;">' + "".join(cards) + '</div></section>'
+
+
+def _recent_sightings(limit: int = 500, offset: int = 0, family: str | None = None) -> list[dict]:
     if not DB_PATH.exists():
         return []
+    family_sql, family_args = _family_sql(family)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        """
+        f"""
         SELECT tail_number, ac_type, ac_subvariant, origin_icao, dest_icao,
                departed_utc, arrived_utc, operator, tracking_url, source, notified_at,
                distance_nm, serial_number, is_tamarack_fleet,
@@ -275,22 +340,24 @@ def _recent_sightings(limit: int = 500, offset: int = 0) -> list[dict]:
                peak_climb_rate_fpm, climb_gradient_pct,
                initial_cruise_alt_ft, time_to_initial_cruise_sec
         FROM v_sightings_dedup
+        WHERE 1=1{family_sql}
         ORDER BY id DESC LIMIT ? OFFSET ?
         """,
-        (limit, offset),
+        (*family_args, limit, offset),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
-def _recent_eu_sightings(limit: int = 200, offset: int = 0) -> list[dict]:
+def _recent_eu_sightings(limit: int = 200, offset: int = 0, family: str | None = None) -> list[dict]:
     """Latest EU_UK-region sightings, newest first. Same schema as _recent_sightings."""
     if not DB_PATH.exists():
         return []
+    family_sql, family_args = _family_sql(family)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        """
+        f"""
         SELECT tail_number, ac_type, ac_subvariant, origin_icao, dest_icao,
                departed_utc, arrived_utc, operator, tracking_url, source, notified_at,
                distance_nm, serial_number, is_tamarack_fleet,
@@ -298,31 +365,34 @@ def _recent_eu_sightings(limit: int = 200, offset: int = 0) -> list[dict]:
                peak_climb_rate_fpm, climb_gradient_pct,
                initial_cruise_alt_ft, time_to_initial_cruise_sec
         FROM v_sightings_dedup
-        WHERE region = 'EU_UK'
+        WHERE region = 'EU_UK'{family_sql}
         ORDER BY id DESC LIMIT ? OFFSET ?
         """,
-        (limit, offset),
+        (*family_args, limit, offset),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
-def _sightings_total_eu() -> int:
+def _sightings_total_eu(family: str | None = None) -> int:
     if not DB_PATH.exists():
         return 0
     conn = sqlite3.connect(DB_PATH)
+    family_sql, family_args = _family_sql(family)
     n = conn.execute(
-        "SELECT COUNT(*) FROM v_sightings_dedup WHERE region = 'EU_UK'"
+        f"SELECT COUNT(*) FROM v_sightings_dedup WHERE region = 'EU_UK'{family_sql}",
+        family_args,
     ).fetchone()[0]
     conn.close()
     return int(n)
 
 
-def _sightings_total() -> int:
+def _sightings_total(family: str | None = None) -> int:
     if not DB_PATH.exists():
         return 0
     conn = sqlite3.connect(DB_PATH)
-    n = conn.execute("SELECT COUNT(*) FROM v_sightings_dedup").fetchone()[0]
+    family_sql, family_args = _family_sql(family)
+    n = conn.execute(f"SELECT COUNT(*) FROM v_sightings_dedup WHERE 1=1{family_sql}", family_args).fetchone()[0]
     conn.close()
     return int(n)
 
@@ -2894,11 +2964,12 @@ def _fleet_penetration_html() -> str:
 
 def _airline_insights_html(region: str, title: str, back_href: str, back_label: str) -> str:
     """Render A320/737 operational insights. No CJ/ATLAS/WAT logic."""
-    data = database.get_airline_insights(region=region, limit=15)
+    family = _normalize_family(request.args.get("family"))
+    data = database.get_airline_insights(region=region, limit=15, family=family)
     compare_region = "EU_UK" if region == "NA" else "NA"
-    compare = database.get_airline_insights(region=compare_region, limit=5)
-    stats = database.get_period_stats(region=region)
-    route_map = database.get_route_map_data(top_n=80, region=region)
+    compare = database.get_airline_insights(region=compare_region, limit=5, family=family)
+    stats = database.get_period_stats(region=region, family=family)
+    route_map = database.get_route_map_data(top_n=80, region=region, family=family)
     route_airports_js = _json.dumps(route_map.get("airports", []))
     route_routes_js = _json.dumps(route_map.get("routes", []))
     type_labels_js = _json.dumps([x.get("label") for x in data.get("top_types", [])[:10]])
@@ -2945,6 +3016,13 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
     cmp_avg_fl = f'FL{compare["avg_fl"]}' if compare.get("avg_fl") else "—"
     cmp_avg_dist = f'{compare["avg_distance"]} nm' if compare.get("avg_distance") else "—"
     route_rows = simple_rows(data["top_routes"], third_fn=lambda x: f'{int(x.get("avg_nm") or 0)} nm' if x.get("avg_nm") else "—")
+    fam_label = _family_label(family)
+    fam_filter = _family_filter_html(family, "/eu-insights" if region == "EU_UK" else "/insights")
+    mission_note = (
+        f"<strong>{fam_label}</strong> mission sample: {data['total']:,} flights, "
+        f"avg distance <strong>{avg}</strong>, avg flight level <strong>{avg_fl}</strong>. "
+        "Next layer will feed these mission bins into Tamarack Mission Analysis for fuel, climb, and WAT benefit estimates."
+    )
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -2958,7 +3036,8 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
 .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-bottom:18px}} #routeMap{{height:420px;border-radius:8px;border:1px solid #334155;margin-bottom:18px;background:#020617}} .chartbox{{height:320px}} h2{{font-size:15px;margin-bottom:10px}} table{{width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden}} th{{background:#334155;color:#94a3b8;font-size:11px;text-transform:uppercase;text-align:left;padding:9px}} td{{padding:9px;border-bottom:1px solid #334155;font-size:13px}} tr:hover{{background:#243244}}
 </style></head><body>
 <div class="nav"><a href="{back_href}">← {back_label}</a> &nbsp;·&nbsp; <a href="/">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights">NA Insights</a> &nbsp;·&nbsp; <a href="/eu">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights">EU Insights</a></div>
-<h1>{title}</h1><div class="sub">A320/737-family operational patterns · region: <strong>{region}</strong> · auto-refreshes every 2 min</div>
+<h1>{title}</h1><div class="sub">{fam_label} operational patterns · region: <strong>{region}</strong> · auto-refreshes every 2 min</div>{fam_filter}
+<div class="card" style="margin-bottom:18px;border-left:4px solid #22c55e;"><h2>Tamarack Mission-Benefit Setup</h2><div style="color:#cbd5e1;line-height:1.45;">{mission_note}</div></div>
 <div class="stats"><div class="stat"><div class="label">Last 24h</div><div class="value">{stats['today']}</div></div><div class="stat"><div class="label">Last 7 days</div><div class="value">{stats['week']}</div></div><div class="stat"><div class="label">All Time</div><div class="value">{data['total']}</div></div><div class="stat"><div class="label">Active Tails</div><div class="value">{data['active_tails']}</div></div><div class="stat"><div class="label">Avg Distance</div><div class="value">{avg}</div></div><div class="stat"><div class="label">Avg Flight Level</div><div class="value">{avg_fl}</div></div><div class="stat"><div class="label">Median Flight Level</div><div class="value">{med_fl}</div></div></div><div class="card" style="margin-bottom:18px;"><h2>NA vs EU altitude context</h2><div style="color:#cbd5e1;line-height:1.45;">Current page: <strong>{region}</strong> avg cruise/top altitude <strong>{avg_fl}</strong>, avg distance <strong>{avg}</strong>. Comparison region <strong>{compare_region}</strong>: avg cruise/top altitude <strong>{cmp_avg_fl}</strong>, avg distance <strong>{cmp_avg_dist}</strong>. EU short-haul flights often cruise lower because of airspace/ATC constraints; treat low FL as operational environment unless distance and route suggest otherwise.</div></div>
 <div class="grid"><div class="card chartbox"><h2>Flight Level Distribution</h2><canvas id="flChart"></canvas></div><div class="card chartbox"><h2>Aircraft Mix</h2><canvas id="typeChart"></canvas></div><div class="card chartbox"><h2>Top Operators</h2><canvas id="operatorChart"></canvas></div><div class="card chartbox"><h2>Arrival Airports</h2><canvas id="airportChart"></canvas></div><div class="card chartbox"><h2>Distance Distribution</h2><canvas id="distanceChart"></canvas></div><div class="card chartbox" style="grid-column:1/-1;"><h2>Block Speed vs Distance</h2><canvas id="blockChart"></canvas></div></div><h2>Route Map</h2><div id="routeMap"></div><div class="grid"><div class="card"><h2>Top Aircraft Variants</h2><table><thead><tr><th>Variant</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_types'])}</tbody></table></div><div class="card"><h2>Top Operators</h2><table><thead><tr><th>Operator</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_operators'])}</tbody></table></div><div class="card"><h2>Top Arrival Airports</h2><table><thead><tr><th>Airport</th><th style="text-align:right;">Arrivals</th><th></th></tr></thead><tbody>{simple_rows(data['top_airports'])}</tbody></table></div><div class="card"><h2>Top Routes</h2><table><thead><tr><th>Route</th><th style="text-align:right;">Flights</th><th>Avg Distance</th></tr></thead><tbody>{route_rows}</tbody></table></div></div>
 <h2>Longest Observed Flights</h2><table><thead><tr><th>Tail</th><th>Type</th><th>Route</th><th style="text-align:right;">Distance</th><th>Operator</th><th>Arrived</th></tr></thead><tbody>{longest_html}</tbody></table>
@@ -2998,6 +3077,7 @@ const routeRoutes = {route_routes_js};
   }}
 }})();
 </script>
+{_chat_widget_html()}
 </body></html>"""
 
 
@@ -3015,17 +3095,20 @@ def dashboard():
     except ValueError:
         page = 1
 
-    total_sightings = _sightings_total()
+    family = _normalize_family(request.args.get("family"))
+    total_sightings = _sightings_total(family=family)
     total_pages     = max(1, (total_sightings + per_page - 1) // per_page)
     if page > total_pages:
         page = total_pages
     offset = (page - 1) * per_page
 
-    rows = _recent_sightings(limit=per_page, offset=offset)
+    rows = _recent_sightings(limit=per_page, offset=offset, family=family)
     status = daemon_state["status"]
     last_poll = daemon_state.get("last_poll_utc") or "—"
     last_error = daemon_state.get("last_error") or ""
-    stats = database.get_period_stats()
+    stats = database.get_period_stats(family=family)
+    opp_feed = database.get_airline_opportunity_feed(region="NA", family=family, limit=6)
+    opportunity_html = _opportunity_feed_html(opp_feed)
     # A320/737 app: no inherited ATLAS prospect/fleet-penetration panels.
 
     status_color = {"running": "#22c55e", "error": "#ef4444", "starting": "#f59e0b"}.get(status, "#888")
@@ -3082,7 +3165,8 @@ def dashboard():
   {_identify_modal_html()}
   <div class="sticky-top">
   <h1>A320/737 Sightings</h1>
-  <div class="sub">A320/737-family landings in the USA &nbsp;·&nbsp; Auto-refreshes every 60s</div>
+  <div class="sub">{_family_label(family)} landings in the USA &nbsp;·&nbsp; Auto-refreshes every 60s</div>
+  {_family_filter_html(family, "/")}
   {error_banner}
   <div class="stats">
     <div class="stat">
@@ -3122,18 +3206,20 @@ def dashboard():
     <a href="/plan" style="display:inline-block;background:#4f46e5;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
       🛫 Daily Flight Plan
     </a>
-    <a href="/insights" style="display:inline-block;background:#1d4ed8;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
+    <a href="/insights{_family_query_suffix(family)}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
       📊 NA Insights
     </a>
-    <a href="/eu" title="EU/UK sightings stream — same layout as this page, filtered to Europe/UK landings" style="display:inline-block;background:#4338ca;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
+    <a href="/eu{_family_query_suffix(family)}" title="EU/UK sightings stream — same layout as this page, filtered to Europe/UK landings" style="display:inline-block;background:#4338ca;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
       EU Sightings
     </a>
-    <a href="/eu-insights" style="display:inline-block;background:#6d28d9;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
+    <a href="/eu-insights{_family_query_suffix(family)}" style="display:inline-block;background:#6d28d9;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
       📊 EU Insights
     </a>
     {_watch_pill_html()}
   </div>
   </div> <!-- /sticky-top -->
+
+  {opportunity_html}
 
   <!-- Airline sightings stream. -->
 
@@ -3178,17 +3264,20 @@ def eu_dashboard():
     except ValueError:
         page = 1
 
-    total_sightings = _sightings_total_eu()
+    family = _normalize_family(request.args.get("family"))
+    total_sightings = _sightings_total_eu(family=family)
     total_pages     = max(1, (total_sightings + per_page - 1) // per_page)
     if page > total_pages:
         page = total_pages
     offset = (page - 1) * per_page
 
-    rows       = _recent_eu_sightings(limit=per_page, offset=offset)
+    rows       = _recent_eu_sightings(limit=per_page, offset=offset, family=family)
     status     = daemon_state["status"]
     last_poll  = daemon_state.get("last_poll_utc") or "—"
     last_error = daemon_state.get("last_error") or ""
-    stats      = database.get_period_stats(region="EU_UK")
+    stats      = database.get_period_stats(region="EU_UK", family=family)
+    opp_feed   = database.get_airline_opportunity_feed(region="EU_UK", family=family, limit=6)
+    opportunity_html = _opportunity_feed_html(opp_feed)
 
     status_color = {"running": "#22c55e", "error": "#ef4444", "starting": "#f59e0b"}.get(status, "#888")
     status_dot   = f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{status_color};margin-right:6px;"></span>'
@@ -3249,7 +3338,8 @@ def eu_dashboard():
   {_identify_modal_html()}
   <div class="sticky-top">
   <h1>A320/737 Sightings <span class="eu-pill">EU / UK</span></h1>
-  <div class="sub">A320/737-family landings in Europe &amp; the UK &nbsp;·&nbsp; Auto-refreshes every 60s</div>
+  <div class="sub">{_family_label(family)} landings in Europe &amp; the UK &nbsp;·&nbsp; Auto-refreshes every 60s</div>
+  {_family_filter_html(family, "/eu")}
   {error_banner}
   <div class="stats">
     <div class="stat">
@@ -3289,15 +3379,17 @@ def eu_dashboard():
     <a href="/" style="display:inline-block;background:#1e293b;color:#e2e8f0;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;border:1px solid #334155;">
       ← NA Sightings
     </a>
-    <a href="/insights" style="display:inline-block;background:#1d4ed8;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
+    <a href="/insights{_family_query_suffix(family)}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
       📊 NA Insights
     </a>
-    <a href="/eu-insights" style="display:inline-block;background:#6d28d9;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
+    <a href="/eu-insights{_family_query_suffix(family)}" style="display:inline-block;background:#6d28d9;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
       📊 EU Insights
     </a>
     {_watch_pill_html()}
   </div>
   </div> <!-- /sticky-top -->
+
+  {opportunity_html}
 
   <!-- Pagination controls (top) -->
   {_pagination_html(page, total_pages, per_page, total_sightings)}

@@ -4274,7 +4274,7 @@ def api_mission_bins():
         "region": region,
         "family": family,
         "status": "observed_bins_pending_simulator_calibration",
-        "notes": "Observed stage-length/altitude bins for offline Tamarack simulator and pro forma linkage; no fuel/WAT claims included here yet.",
+        "notes": "Observed stage-length/altitude bins. Feed simulator deltas into Leasing_Model for A320 split-savings economics; Tamarack_525_Financials is for project/company run-rate costs. No fuel/WAT claims included here yet.",
         "bins": bins,
     })
 
@@ -4314,7 +4314,7 @@ def export_mission_bins_csv():
             "annualized_savings_usd": "",
             "airline_share_usd": "",
             "tamarack_share_usd": "",
-            "deck_evidence_note": "Reserved for simulator/pro forma output; intentionally blank until calibrated.",
+            "deck_evidence_note": "Reserved for simulator output feeding Leasing_Model split-savings economics; intentionally blank until calibrated.",
         })
     fname = f"mission_bins_{region or 'ALL'}_{family}.csv".lower()
     return Response(

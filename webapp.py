@@ -3041,6 +3041,14 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
         f"avg distance <strong>{avg}</strong>, avg flight level <strong>{avg_fl}</strong>. "
         "Next layer will feed these mission bins into Tamarack Mission Analysis for fuel, climb, and WAT benefit estimates."
     )
+    export_region = region
+    export_family = family or "A320"
+    export_links = (
+        f'<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">'
+        f'<a href="/export/mission-bins.csv?region={export_region}&family={export_family}" style="display:inline-block;background:#0f172a;color:#93c5fd;border:1px solid #334155;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:700;">↓ Mission bins CSV</a>'
+        f'<a href="/api/mission-bins?region={export_region}&family={export_family}" style="display:inline-block;background:#0f172a;color:#93c5fd;border:1px solid #334155;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:700;">Mission bins JSON</a>'
+        f'</div>'
+    )
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -3055,7 +3063,7 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
 </style></head><body>
 <div class="nav"><a href="{back_href}">← {back_label}</a> &nbsp;·&nbsp; <a href="/">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights">NA Insights</a> &nbsp;·&nbsp; <a href="/eu">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights">EU Insights</a></div>
 <h1>{title}</h1><div class="sub">{fam_label} operational patterns · region: <strong>{region}</strong> · auto-refreshes every 2 min</div>{fam_filter}
-<div class="card" style="margin-bottom:18px;border-left:4px solid #22c55e;"><h2>Tamarack Mission-Benefit Setup</h2><div style="color:#cbd5e1;line-height:1.45;">{mission_note}</div></div>
+<div class="card" style="margin-bottom:18px;border-left:4px solid #22c55e;"><h2>Tamarack Mission-Benefit Setup</h2><div style="color:#cbd5e1;line-height:1.45;">{mission_note}</div>{export_links}</div>
 {mission_bins_html}
 <div class="stats"><div class="stat"><div class="label">Last 24h</div><div class="value">{stats['today']}</div></div><div class="stat"><div class="label">Last 7 days</div><div class="value">{stats['week']}</div></div><div class="stat"><div class="label">All Time</div><div class="value">{data['total']}</div></div><div class="stat"><div class="label">Active Tails</div><div class="value">{data['active_tails']}</div></div><div class="stat"><div class="label">Avg Distance</div><div class="value">{avg}</div></div><div class="stat"><div class="label">Avg Flight Level</div><div class="value">{avg_fl}</div></div><div class="stat"><div class="label">Median Flight Level</div><div class="value">{med_fl}</div></div></div><div class="card" style="margin-bottom:18px;"><h2>NA vs EU altitude context</h2><div style="color:#cbd5e1;line-height:1.45;">Current page: <strong>{region}</strong> avg cruise/top altitude <strong>{avg_fl}</strong>, avg distance <strong>{avg}</strong>. Comparison region <strong>{compare_region}</strong>: avg cruise/top altitude <strong>{cmp_avg_fl}</strong>, avg distance <strong>{cmp_avg_dist}</strong>. EU short-haul flights often cruise lower because of airspace/ATC constraints; treat low FL as operational environment unless distance and route suggest otherwise.</div></div>
 <div class="grid"><div class="card chartbox"><h2>Flight Level Distribution</h2><canvas id="flChart"></canvas></div><div class="card chartbox"><h2>Aircraft Mix</h2><canvas id="typeChart"></canvas></div><div class="card chartbox"><h2>Top Operators</h2><canvas id="operatorChart"></canvas></div><div class="card chartbox"><h2>Arrival Airports</h2><canvas id="airportChart"></canvas></div><div class="card chartbox"><h2>Distance Distribution</h2><canvas id="distanceChart"></canvas></div><div class="card chartbox" style="grid-column:1/-1;"><h2>Block Speed vs Distance</h2><canvas id="blockChart"></canvas></div></div><h2>Route Map</h2><div id="routeMap"></div><div class="grid"><div class="card"><h2>Top Aircraft Variants</h2><table><thead><tr><th>Variant</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_types'])}</tbody></table></div><div class="card"><h2>Top Operators</h2><table><thead><tr><th>Operator</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_operators'])}</tbody></table></div><div class="card"><h2>Top Arrival Airports</h2><table><thead><tr><th>Airport</th><th style="text-align:right;">Arrivals</th><th></th></tr></thead><tbody>{simple_rows(data['top_airports'])}</tbody></table></div><div class="card"><h2>Top Routes</h2><table><thead><tr><th>Route</th><th style="text-align:right;">Flights</th><th>Avg Distance</th></tr></thead><tbody>{route_rows}</tbody></table></div></div>
@@ -4248,6 +4256,71 @@ def export_prospects_csv():
         output.getvalue(),
         mimetype="text/csv",
         headers={"Content-Disposition": "attachment; filename=atlas_prospects.csv"},
+    )
+
+
+def _request_region(default: str | None = "NA") -> str | None:
+    raw = (request.args.get("region") or default or "").strip().upper()
+    return raw if raw in ("NA", "EU_UK", "OTHER") else default
+
+
+@app.get("/api/mission-bins")
+def api_mission_bins():
+    family = _normalize_family(request.args.get("family")) or "A320"
+    region = _request_region("NA")
+    bins = database.get_airline_mission_bins(region=region, family=family)
+    return jsonify({
+        "source": "A320_737_Sightings",
+        "region": region,
+        "family": family,
+        "status": "observed_bins_pending_simulator_calibration",
+        "notes": "Observed stage-length/altitude bins for offline Tamarack simulator and pro forma linkage; no fuel/WAT claims included here yet.",
+        "bins": bins,
+    })
+
+
+@app.get("/export/mission-bins.csv")
+def export_mission_bins_csv():
+    family = _normalize_family(request.args.get("family")) or "A320"
+    region = _request_region("NA")
+    rows = database.get_airline_mission_bins(region=region, family=family)
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=[
+        "region", "family", "distance_bin", "altitude_bin", "flight_count",
+        "representative_distance_nm", "representative_altitude_ft",
+        "avg_distance_nm", "avg_altitude_ft", "sim_status",
+        "flatwing_fuel_lb", "tamarack_fuel_lb", "fuel_saved_lb",
+        "fuel_saved_pct", "wat_gain_lb", "annualized_savings_usd",
+        "airline_share_usd", "tamarack_share_usd", "deck_evidence_note",
+    ])
+    writer.writeheader()
+    for r in rows:
+        writer.writerow({
+            "region": region,
+            "family": family,
+            "distance_bin": r.get("distance_bin", ""),
+            "altitude_bin": r.get("altitude_bin", ""),
+            "flight_count": r.get("count", 0),
+            "representative_distance_nm": r.get("representative_distance_nm", ""),
+            "representative_altitude_ft": r.get("representative_altitude_ft", ""),
+            "avg_distance_nm": r.get("avg_distance_nm", ""),
+            "avg_altitude_ft": r.get("avg_altitude_ft", ""),
+            "sim_status": r.get("sim_status", ""),
+            "flatwing_fuel_lb": "",
+            "tamarack_fuel_lb": "",
+            "fuel_saved_lb": "",
+            "fuel_saved_pct": "",
+            "wat_gain_lb": "",
+            "annualized_savings_usd": "",
+            "airline_share_usd": "",
+            "tamarack_share_usd": "",
+            "deck_evidence_note": "Reserved for simulator/pro forma output; intentionally blank until calibrated.",
+        })
+    fname = f"mission_bins_{region or 'ALL'}_{family}.csv".lower()
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
     )
 
 

@@ -372,7 +372,7 @@ def _mission_bins_summary_chart(points: list[dict]) -> str:
     width, height = 920, 280
     ml, mr, mt, mb = 58, 22, 26, 42
     max_x = max(p["distance_nm"] for p in points) or 1
-    min_y = min(0, min(p["savings_pct"] for p in points))
+    min_y = 0
     max_y = max(1, max(p["savings_pct"] for p in points))
     pad_y = max(0.5, (max_y - min_y) * 0.15)
     min_y -= pad_y
@@ -413,8 +413,9 @@ def _mission_bins_summary_chart(points: list[dict]) -> str:
         radius = min(16, max(5, (p.get("flights") or 0) ** 0.5 / 2.5))
         color = colors.get(p.get("altitude_bin"), "#a78bfa")
         label = html.escape(f'{p.get("route", "")} {p.get("altitude_bin", "")}: {p["savings_pct"]:.2f}% saved')
-        parts.append(f'<circle cx="{sx(p["distance_nm"]):.1f}" cy="{sy(p["savings_pct"]):.1f}" r="{radius:.1f}" fill="{color}" stroke="#e2e8f0" stroke-width="1"><title>{label}</title></circle>')
-        parts.append(f'<text x="{sx(p["distance_nm"]):.1f}" y="{sy(p["savings_pct"])-radius-4:.1f}" text-anchor="middle" fill="#cbd5e1" font-size="10">{int(round(p["distance_nm"]))} nm</text>')
+        plot_y = max(0, p["savings_pct"])
+        parts.append(f'<circle cx="{sx(p["distance_nm"]):.1f}" cy="{sy(plot_y):.1f}" r="{radius:.1f}" fill="{color}" stroke="#e2e8f0" stroke-width="1"><title>{label}</title></circle>')
+        parts.append(f'<text x="{sx(p["distance_nm"]):.1f}" y="{sy(plot_y)-radius-4:.1f}" text-anchor="middle" fill="#cbd5e1" font-size="10">{int(round(p["distance_nm"]))} nm</text>')
     parts.append(f'<text x="{width/2:.0f}" y="{height-4}" text-anchor="middle" fill="#94a3b8" font-size="12">Representative stage length / distance (nm)</text>')
     parts.append(f'<text x="14" y="{height/2:.0f}" transform="rotate(-90 14 {height/2:.0f})" text-anchor="middle" fill="#94a3b8" font-size="12">Fuel saved (%)</text>')
     lx = width - 160

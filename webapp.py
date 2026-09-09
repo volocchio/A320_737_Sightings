@@ -44,6 +44,10 @@ SIM_RESULTS_PATHS = [
     Path("/tmp/tma_a320_bin_sim.json"),
     Path("./tma_a320_bin_sim.json"),
 ]
+SIM_STATUS_PATHS = [
+    Path("/tmp/a320_sightings_workup_status.json"),
+    Path("./a320_sightings_workup_status.json"),
+]
 
 
 def _load_sim_result_index() -> dict[tuple[str, str], dict]:
@@ -61,6 +65,14 @@ def _load_sim_result_index() -> dict[tuple[str, str], dict]:
 
 
 def _sim_result_meta() -> dict:
+    status = {}
+    for spath in SIM_STATUS_PATHS:
+        try:
+            if spath.exists():
+                status = json.loads(spath.read_text())
+                break
+        except Exception:
+            continue
     for path in SIM_RESULTS_PATHS:
         try:
             if path.exists():
@@ -70,10 +82,11 @@ def _sim_result_meta() -> dict:
                     "mtime": path.stat().st_mtime,
                     "assumption": data.get("assumption", {}),
                     "rows": len(data.get("rows", [])),
+                    "status": status,
                 }
         except Exception:
             continue
-    return {}
+    return {"status": status} if status else {}
 
 # ── Usage tracking: "Who are you?" cookie + page-view logger ────────────────
 
@@ -348,7 +361,12 @@ def _mission_bins_html(bins: list[dict]) -> str:
     if sim_meta:
         import datetime as _dt
         age_hours = max(0, (_dt.datetime.now().timestamp() - float(sim_meta.get("mtime") or 0)) / 3600)
-        health = f'<div style="color:#94a3b8;font-size:11px;margin:6px 0 10px;">Sim workup: {sim_meta.get("rows", 0)} bins loaded; age {age_hours:.1f} hr; daily refresh target. Calibration pending.</div>'
+        status = sim_meta.get("status") or {}
+        state = html.escape(str(status.get("state") or "UNKNOWN"))
+        msg = html.escape(str(status.get("message") or "No explicit run status yet"))
+        state_color = "#22c55e" if state == "OK" else "#f59e0b" if state in ("RUNNING", "UNKNOWN") else "#ef4444"
+        stamp = html.escape(str(status.get("updated_iso") or "—"))
+        health = f'<div style="color:#94a3b8;font-size:11px;margin:6px 0 10px;">Sim workup: <span style="color:{state_color};font-weight:800;">{state}</span> — {msg}; {sim_meta.get("rows", 0)} bins loaded; result age {age_hours:.1f} hr; status updated {stamp}; daily refresh target. Calibration pending.</div>'
     else:
         health = '<div style="color:#f59e0b;font-size:11px;margin:6px 0 10px;">Sim workup: no result file loaded yet.</div>'
     rows = []

@@ -51,17 +51,22 @@ SIM_STATUS_PATHS = [
 
 
 def _load_sim_result_index() -> dict[tuple[str, str], dict]:
+    rows = _load_sim_result_rows()
+    return {
+        (str(r.get("distance_bin") or ""), str(r.get("altitude_bin") or "")): r
+        for r in rows
+    }
+
+
+def _load_sim_result_rows() -> list[dict]:
     for path in SIM_RESULTS_PATHS:
         try:
             if path.exists():
                 data = json.loads(path.read_text())
-                return {
-                    (str(r.get("distance_bin") or ""), str(r.get("altitude_bin") or "")): r
-                    for r in data.get("rows", [])
-                }
+                return list(data.get("rows", []))
         except Exception:
             continue
-    return {}
+    return []
 
 
 def _sim_result_meta() -> dict:
@@ -353,10 +358,14 @@ def _family_filter_html(active: str | None, base_path: str) -> str:
     return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px;align-items:center;"><span style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.8px;">Family</span>' + pill("All", None) + pill("A320 Family", "A320") + pill("737 Family", "B737") + '</div>'
 
 
-def _mission_bins_html(bins: list[dict]) -> str:
+def _mission_bins_html(bins: list[dict], region: str = "NA") -> str:
     if not bins:
         return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;">No distance/altitude bins yet for this filter.</div></div>'
-    sim_index = _load_sim_result_index()
+    sim_rows = _load_sim_result_rows()
+    sim_index = {
+        (str(r.get("region") or region), str(r.get("distance_bin") or ""), str(r.get("altitude_bin") or "")): r
+        for r in sim_rows
+    }
     sim_meta = _sim_result_meta()
     if sim_meta:
         import datetime as _dt
@@ -372,7 +381,7 @@ def _mission_bins_html(bins: list[dict]) -> str:
     rows = []
     chart_points = []
     for b in bins[:10]:
-        key = (str(b.get("distance_bin") or ""), str(b.get("altitude_bin") or ""))
+        key = (region, str(b.get("distance_bin") or ""), str(b.get("altitude_bin") or ""))
         sim = sim_index.get(key)
         if sim and sim.get("fuel_saved_pct_avg") is not None:
             raw_delta = float(sim.get("fuel_saved_pct_avg") or 0)
@@ -404,7 +413,8 @@ def _mission_bins_html(bins: list[dict]) -> str:
             f'<td style="text-align:right;">FL{round((b.get("avg_altitude_ft") or 0)/100)}</td>'
             f'<td>{status}</td></tr>'
         )
-    chart_html = _mission_bins_summary_charts(chart_points)
+    all_chart_points = _sim_rows_to_chart_points(sim_rows)
+    chart_html = _mission_bins_summary_charts(all_chart_points or chart_points)
     return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">One row = one <b>distance × altitude</b> bin. Repeated stage lengths are not duplicates; they are the same distance band flown at different altitude bands. Status loads latest Tamarack_Mission_Analysis workup when available.</div>' + health + '<table><thead><tr><th>Stage Length Bin</th><th>Altitude Bin</th><th style="text-align:right;">Flights in Bin</th><th style="text-align:right;">Aircraft</th><th style="text-align:right;">Avg Dist</th><th style="text-align:right;">Avg FL</th><th>Sim Status</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>' + chart_html + '</div>'
 
 
@@ -419,6 +429,26 @@ def _mission_bins_summary_charts(points: list[dict]) -> str:
         + _mission_bins_weighted_line_chart(points)
         + '</details>'
     )
+
+
+def _sim_rows_to_chart_points(rows: list[dict]) -> list[dict]:
+    pts = []
+    for r in rows:
+        if r.get("fuel_saved_pct_avg") is None:
+            continue
+        raw_delta = float(r.get("fuel_saved_pct_avg") or 0)
+        rep = r.get("representative_flight") or {}
+        route = f'{html.escape(r.get("sim_dep_icao") or rep.get("origin_icao") or "")}→{html.escape(r.get("sim_arr_icao") or rep.get("dest_icao") or "")}'
+        pts.append({
+            "region": str(r.get("region") or "NA"),
+            "distance_nm": float(r.get("representative_distance_nm") or r.get("avg_distance_nm") or 0),
+            "distance_bin": str(r.get("distance_bin") or ""),
+            "savings_pct": -raw_delta,
+            "altitude_bin": str(r.get("altitude_bin") or ""),
+            "flights": int(r.get("count") or 0),
+            "route": route,
+        })
+    return pts
 
 
 def _mission_bins_bubble_chart(points: list[dict]) -> str:
@@ -480,38 +510,42 @@ def _mission_bins_bubble_chart(points: list[dict]) -> str:
 
 
 def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
-    """Aggregate by stage-length bin; weighted by observed flight count."""
-    grouped: dict[str, dict] = {}
+    """Aggregate by stage-length bin and region; weighted by observed flight count."""
+    grouped: dict[tuple[str, str], dict] = {}
     for p in points:
         stage = str(p.get("distance_bin") or "")
+        region = str(p.get("region") or "NA")
         flights = max(1, int(p.get("flights") or 0))
-        g = grouped.setdefault(stage, {"flights": 0, "weighted": 0.0, "alts": set()})
+        g = grouped.setdefault((stage, region), {"flights": 0, "weighted": 0.0, "alts": set()})
         g["flights"] += flights
         g["weighted"] += flights * float(p.get("savings_pct") or 0)
         g["alts"].add(str(p.get("altitude_bin") or ""))
-    rows = []
-    for stage, g in grouped.items():
+    stage_rows: dict[str, dict[str, tuple[float, int, list[str]]]] = {}
+    for (stage, region), g in grouped.items():
         avg = g["weighted"] / g["flights"] if g["flights"] else 0
-        # sort by first number in label
+        stage_rows.setdefault(stage, {})[region] = (avg, g["flights"], sorted(g["alts"]))
+    def stage_order(stage: str) -> int:
         try:
-            order = int(stage.split("–", 1)[0].replace(",", ""))
+            return int(stage.split("–", 1)[0].replace(",", ""))
         except Exception:
-            order = 99999
-        rows.append((order, stage, avg, g["flights"], sorted(g["alts"])))
-    rows.sort()
-    if not rows:
+            return 99999
+    stages = sorted(stage_rows, key=stage_order)
+    regions = [r for r in ("NA", "EU_UK") if any(r in stage_rows[s] for s in stages)]
+    if not stages:
         return ""
     width, height = 920, 300
     ml, mr, mt, mb = 58, 24, 34, 62
-    max_y = max(1, max(r[2] for r in rows)) * 1.18
+    max_y = max(1, max(v[0] for rs in stage_rows.values() for v in rs.values())) * 1.18
     bar_gap = 16
-    bar_w = max(24, (width - ml - mr - bar_gap * (len(rows) - 1)) / max(1, len(rows)))
+    group_w = max(48, (width - ml - mr - bar_gap * (len(stages) - 1)) / max(1, len(stages)))
+    inner_gap = 5
+    bar_w = max(14, (group_w - inner_gap * max(0, len(regions) - 1)) / max(1, len(regions)))
     def sy(y: float) -> float:
         return height - mb - (max(0, y) / max_y) * (height - mt - mb)
     parts = [
         '<div style="margin-top:18px;border-top:1px solid #334155;padding-top:14px;">',
-        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Fuel savings by representative stage-length bin</div>',
-        '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">Primary view: combines altitude bands using flight-count weighting. Cleaner since FL does not drive much separation.</div>',
+        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Fuel savings by representative stage-length bin — NA vs EU/UK</div>',
+        '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">Primary view: side-by-side region bars; altitude bands combined using flight-count weighting.</div>',
         f'<svg width="100%" viewBox="0 0 {width} {height}" role="img" aria-label="Weighted savings by stage length">',
         f'<rect x="0" y="0" width="{width}" height="{height}" rx="10" fill="#0f172a"/>',
     ]
@@ -519,52 +553,64 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
         y = max_y * i / 4
         parts.append(f'<line x1="{ml}" y1="{sy(y):.1f}" x2="{width-mr}" y2="{sy(y):.1f}" stroke="#1e293b"/>')
         parts.append(f'<text x="{ml-8}" y="{sy(y)+4:.1f}" text-anchor="end" fill="#94a3b8" font-size="11">{y:.1f}%</text>')
-    for i, (_, stage, avg, flights, alts) in enumerate(rows):
-        x = ml + i * (bar_w + bar_gap)
-        y = sy(avg)
-        h = height - mb - y
-        color = "#22c55e" if avg >= 0 else "#ef4444"
-        title = html.escape(f'{stage}: {avg:.2f}% saved, {flights:,} flights, altitude bands: {", ".join(alts)}')
-        parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" rx="5" fill="{color}"><title>{title}</title></rect>')
-        parts.append(f'<text x="{x+bar_w/2:.1f}" y="{y-6:.1f}" text-anchor="middle" fill="#e2e8f0" font-size="11">{avg:.1f}%</text>')
-        parts.append(f'<text x="{x+bar_w/2:.1f}" y="{height-mb+18}" text-anchor="middle" fill="#94a3b8" font-size="10">{html.escape(stage)}</text>')
-        parts.append(f'<text x="{x+bar_w/2:.1f}" y="{height-mb+34}" text-anchor="middle" fill="#64748b" font-size="10">{flights:,} flts</text>')
+    region_colors = {"NA": "#22c55e", "EU_UK": "#60a5fa"}
+    region_labels = {"NA": "NA", "EU_UK": "EU/UK"}
+    for i, stage in enumerate(stages):
+        group_x = ml + i * (group_w + bar_gap)
+        for j, reg in enumerate(regions):
+            if reg not in stage_rows[stage]:
+                continue
+            avg, flights, alts = stage_rows[stage][reg]
+            x = group_x + j * (bar_w + inner_gap)
+            y = sy(avg)
+            h = height - mb - y
+            color = region_colors.get(reg, "#a78bfa") if avg >= 0 else "#ef4444"
+            title = html.escape(f'{stage} {region_labels.get(reg, reg)}: {avg:.2f}% saved, {flights:,} flights, altitude bands: {", ".join(alts)}')
+            parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" rx="5" fill="{color}"><title>{title}</title></rect>')
+            parts.append(f'<text x="{x+bar_w/2:.1f}" y="{y-6:.1f}" text-anchor="middle" fill="#e2e8f0" font-size="10">{avg:.1f}</text>')
+        parts.append(f'<text x="{group_x+group_w/2:.1f}" y="{height-mb+18}" text-anchor="middle" fill="#94a3b8" font-size="10">{html.escape(stage)}</text>')
+    lx = width - 150
+    for j, reg in enumerate(regions):
+        color = region_colors.get(reg, "#a78bfa")
+        parts.append(f'<rect x="{lx}" y="{18+j*18}" width="10" height="10" rx="2" fill="{color}"/><text x="{lx+16}" y="{27+j*18}" fill="#cbd5e1" font-size="11">{region_labels.get(reg, reg)}</text>')
     parts.append(f'<text x="14" y="{height/2:.0f}" transform="rotate(-90 14 {height/2:.0f})" text-anchor="middle" fill="#94a3b8" font-size="12">Weighted fuel saved (%)</text>')
     parts.append('</svg></div>')
     return ''.join(parts)
 
 
 def _mission_bins_weighted_line_chart(points: list[dict]) -> str:
-    """Single investor-friendly line: weighted stage-length average."""
-    grouped: dict[str, dict] = {}
+    """Investor-friendly region lines: weighted stage-length average."""
+    grouped: dict[tuple[str, str], dict] = {}
     for p in points:
         stage = str(p.get("distance_bin") or "")
+        region = str(p.get("region") or "NA")
         flights = max(1, int(p.get("flights") or 0))
-        g = grouped.setdefault(stage, {"distance": 0.0, "flights": 0, "weighted": 0.0})
+        g = grouped.setdefault((stage, region), {"distance": 0.0, "flights": 0, "weighted": 0.0})
         g["distance"] += flights * float(p.get("distance_nm") or 0)
         g["flights"] += flights
         g["weighted"] += flights * float(p.get("savings_pct") or 0)
-    rows = []
-    for stage, g in grouped.items():
+    by_region: dict[str, list[tuple[float, float, str, int]]] = {}
+    for (stage, region), g in grouped.items():
         if not g["flights"]:
             continue
-        rows.append((g["distance"] / g["flights"], g["weighted"] / g["flights"], stage, g["flights"]))
-    rows.sort()
-    if len(rows) < 2:
+        by_region.setdefault(region, []).append((g["distance"] / g["flights"], g["weighted"] / g["flights"], stage, g["flights"]))
+    for rows in by_region.values():
+        rows.sort()
+    all_rows = [r for rows in by_region.values() for r in rows]
+    if len(all_rows) < 2:
         return ""
     width, height = 920, 280
     ml, mr, mt, mb = 58, 24, 30, 42
-    max_x = max(r[0] for r in rows) or 1
-    max_y = max(1, max(r[1] for r in rows)) * 1.18
+    max_x = max(r[0] for r in all_rows) or 1
+    max_y = max(1, max(r[1] for r in all_rows)) * 1.18
     def sx(x: float) -> float:
         return ml + (x / max_x) * (width - ml - mr)
     def sy(y: float) -> float:
         return height - mb - (max(0, y) / max_y) * (height - mt - mb)
-    pts = " ".join(f'{sx(x):.1f},{sy(y):.1f}' for x, y, _, _ in rows)
     parts = [
         '<div style="margin-top:18px;border-top:1px solid #334155;padding-top:14px;">',
-        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Option C: single clean benefit curve</div>',
-        '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">Flight-count-weighted by stage-length bin. This is probably the deck chart if we want one simple story.</div>',
+        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Option C: NA vs EU/UK benefit curves</div>',
+        '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">Flight-count-weighted by stage-length bin, separated by region.</div>',
         f'<svg width="100%" viewBox="0 0 {width} {height}" role="img" aria-label="Single weighted benefit curve">',
         f'<rect x="0" y="0" width="{width}" height="{height}" rx="10" fill="#0f172a"/>',
     ]
@@ -572,11 +618,21 @@ def _mission_bins_weighted_line_chart(points: list[dict]) -> str:
         y = max_y * i / 4
         parts.append(f'<line x1="{ml}" y1="{sy(y):.1f}" x2="{width-mr}" y2="{sy(y):.1f}" stroke="#1e293b"/>')
         parts.append(f'<text x="{ml-8}" y="{sy(y)+4:.1f}" text-anchor="end" fill="#94a3b8" font-size="11">{y:.1f}%</text>')
-    parts.append(f'<polyline points="{pts}" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>')
-    for x, y, stage, flights in rows:
-        title = html.escape(f'{stage}: {y:.2f}% saved, {flights:,} flights')
-        parts.append(f'<circle cx="{sx(x):.1f}" cy="{sy(y):.1f}" r="6" fill="#22c55e" stroke="#e2e8f0"><title>{title}</title></circle>')
-        parts.append(f'<text x="{sx(x):.1f}" y="{sy(y)-12:.1f}" text-anchor="middle" fill="#cbd5e1" font-size="10">{int(round(x))} nm</text>')
+    region_colors = {"NA": "#22c55e", "EU_UK": "#60a5fa"}
+    region_labels = {"NA": "NA", "EU_UK": "EU/UK"}
+    for reg, rows in by_region.items():
+        if len(rows) < 2:
+            continue
+        color = region_colors.get(reg, "#a78bfa")
+        pts = " ".join(f'{sx(x):.1f},{sy(y):.1f}' for x, y, _, _ in rows)
+        parts.append(f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>')
+        for x, y, stage, flights in rows:
+            title = html.escape(f'{stage} {region_labels.get(reg, reg)}: {y:.2f}% saved, {flights:,} flights')
+            parts.append(f'<circle cx="{sx(x):.1f}" cy="{sy(y):.1f}" r="6" fill="{color}" stroke="#e2e8f0"><title>{title}</title></circle>')
+    lx = width - 150
+    for j, (reg, color) in enumerate(region_colors.items()):
+        if reg in by_region:
+            parts.append(f'<line x1="{lx}" y1="{20+j*18}" x2="{lx+18}" y2="{20+j*18}" stroke="{color}" stroke-width="3"/><text x="{lx+26}" y="{24+j*18}" fill="#cbd5e1" font-size="11">{region_labels.get(reg, reg)}</text>')
     parts.append(f'<text x="{width/2:.0f}" y="{height-8}" text-anchor="middle" fill="#94a3b8" font-size="12">Representative stage length (nm)</text>')
     parts.append(f'<text x="14" y="{height/2:.0f}" transform="rotate(-90 14 {height/2:.0f})" text-anchor="middle" fill="#94a3b8" font-size="12">Weighted fuel saved (%)</text>')
     parts.append('</svg></div>')
@@ -3250,7 +3306,7 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
     compare = database.get_airline_insights(region=compare_region, limit=5, family=family)
     stats = database.get_period_stats(region=region, family=family)
     mission_bins = database.get_airline_mission_bins(region=region, family=family or "A320")
-    mission_bins_html = _mission_bins_html(mission_bins)
+    mission_bins_html = _mission_bins_html(mission_bins, region=region)
     route_map = database.get_route_map_data(top_n=80, region=region, family=family)
     route_airports_js = _json.dumps(route_map.get("airports", []))
     route_routes_js = _json.dumps(route_map.get("routes", []))

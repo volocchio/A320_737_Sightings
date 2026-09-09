@@ -3494,9 +3494,6 @@ def dashboard():
     </div>
   </div>
   <div style="margin-bottom:4px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-    <a href="/plan" style="display:inline-block;background:#4f46e5;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
-      🛫 Daily Flight Plan
-    </a>
     <a href="/insights{_family_query_suffix(family)}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;">
       📊 NA Insights
     </a>

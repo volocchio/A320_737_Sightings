@@ -59,6 +59,22 @@ def _load_sim_result_index() -> dict[tuple[str, str], dict]:
             continue
     return {}
 
+
+def _sim_result_meta() -> dict:
+    for path in SIM_RESULTS_PATHS:
+        try:
+            if path.exists():
+                data = json.loads(path.read_text())
+                return {
+                    "path": str(path),
+                    "mtime": path.stat().st_mtime,
+                    "assumption": data.get("assumption", {}),
+                    "rows": len(data.get("rows", [])),
+                }
+        except Exception:
+            continue
+    return {}
+
 # ── Usage tracking: "Who are you?" cookie + page-view logger ────────────────
 
 _IDENTIFY_COOKIE = "525_user"
@@ -328,6 +344,13 @@ def _mission_bins_html(bins: list[dict]) -> str:
     if not bins:
         return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;">No distance/altitude bins yet for this filter.</div></div>'
     sim_index = _load_sim_result_index()
+    sim_meta = _sim_result_meta()
+    if sim_meta:
+        import datetime as _dt
+        age_hours = max(0, (_dt.datetime.now().timestamp() - float(sim_meta.get("mtime") or 0)) / 3600)
+        health = f'<div style="color:#94a3b8;font-size:11px;margin:6px 0 10px;">Sim workup: {sim_meta.get("rows", 0)} bins loaded; age {age_hours:.1f} hr; daily refresh target. Calibration pending.</div>'
+    else:
+        health = '<div style="color:#f59e0b;font-size:11px;margin:6px 0 10px;">Sim workup: no result file loaded yet.</div>'
     rows = []
     chart_points = []
     for b in bins[:10]:
@@ -358,12 +381,13 @@ def _mission_bins_html(bins: list[dict]) -> str:
             f'<tr><td>{html.escape(b.get("distance_bin") or "—")}</td>'
             f'<td>{html.escape(b.get("altitude_bin") or "—")}</td>'
             f'<td style="text-align:right;color:#60a5fa;font-weight:800;">{int(b.get("count") or 0):,}</td>'
+            f'<td style="text-align:right;color:#e2e8f0;font-weight:700;">{int(b.get("unique_aircraft") or 0):,}</td>'
             f'<td style="text-align:right;">{int(b.get("avg_distance_nm") or 0):,} nm</td>'
             f'<td style="text-align:right;">FL{round((b.get("avg_altitude_ft") or 0)/100)}</td>'
             f'<td>{status}</td></tr>'
         )
     chart_html = _mission_bins_summary_charts(chart_points)
-    return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">One row = one <b>distance × altitude</b> bin. Repeated stage lengths are not duplicates; they are the same distance band flown at different altitude bands. Status loads latest Tamarack_Mission_Analysis workup when available.</div><table><thead><tr><th>Stage Length Bin</th><th>Altitude Bin</th><th style="text-align:right;">Flights in Bin</th><th style="text-align:right;">Avg Dist</th><th style="text-align:right;">Avg FL</th><th>Sim Status</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>' + chart_html + '</div>'
+    return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">One row = one <b>distance × altitude</b> bin. Repeated stage lengths are not duplicates; they are the same distance band flown at different altitude bands. Status loads latest Tamarack_Mission_Analysis workup when available.</div>' + health + '<table><thead><tr><th>Stage Length Bin</th><th>Altitude Bin</th><th style="text-align:right;">Flights in Bin</th><th style="text-align:right;">Aircraft</th><th style="text-align:right;">Avg Dist</th><th style="text-align:right;">Avg FL</th><th>Sim Status</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>' + chart_html + '</div>'
 
 
 def _mission_bins_summary_charts(points: list[dict]) -> str:

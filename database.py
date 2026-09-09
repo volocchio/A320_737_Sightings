@@ -3084,12 +3084,15 @@ def get_airline_mission_bins(region: str | None = "NA", family: str | None = "A3
             "count": 0,
             "sum_distance_nm": 0.0,
             "sum_altitude_ft": 0,
+            "tails": set(),
             "representative_flight": None,
             "representative_error": 10**9,
         })
         b["count"] += 1
         b["sum_distance_nm"] += dist
         b["sum_altitude_ft"] += alt
+        if r.get("tail_number"):
+            b["tails"].add(str(r.get("tail_number")).upper())
         # Pick the real flight closest to the bin representative distance+altitude.
         # This gives the simulator an actual airport pair instead of a synthetic leg.
         err = abs(dist - d_bin[3]) + abs((alt - a_bin[3]) / 1000.0) * 25.0
@@ -3114,6 +3117,7 @@ def get_airline_mission_bins(region: str | None = "NA", family: str | None = "A3
             "representative_distance_nm": b["representative_distance_nm"],
             "representative_altitude_ft": b["representative_altitude_ft"],
             "count": b["count"],
+            "unique_aircraft": len(b.get("tails") or []),
             "avg_distance_nm": round(b["sum_distance_nm"] / n),
             "avg_altitude_ft": round(b["sum_altitude_ft"] / n),
             "sim_status": "pending_a320_config",
@@ -3820,4 +3824,3 @@ def get_da_distribution() -> dict:
             "landings_with_oat": n_la_oat,
         },
     }
-

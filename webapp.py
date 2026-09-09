@@ -329,16 +329,25 @@ def _mission_bins_html(bins: list[dict]) -> str:
         return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;">No distance/altitude bins yet for this filter.</div></div>'
     sim_index = _load_sim_result_index()
     rows = []
+    chart_points = []
     for b in bins[:10]:
         key = (str(b.get("distance_bin") or ""), str(b.get("altitude_bin") or ""))
         sim = sim_index.get(key)
         if sim and sim.get("fuel_saved_pct_avg") is not None:
-            saved = float(sim.get("fuel_saved_pct_avg") or 0)
-            color = "#22c55e" if saved >= 0 else "#ef4444"
+            raw_delta = float(sim.get("fuel_saved_pct_avg") or 0)
+            savings = -raw_delta
+            color = "#22c55e" if savings >= 0 else "#ef4444"
             route = f'{html.escape(sim.get("sim_dep_icao") or "")}→{html.escape(sim.get("sim_arr_icao") or "")}'
+            chart_points.append({
+                "distance_nm": float(sim.get("representative_distance_nm") or b.get("avg_distance_nm") or 0),
+                "savings_pct": savings,
+                "altitude_bin": str(sim.get("altitude_bin") or b.get("altitude_bin") or ""),
+                "flights": int(b.get("count") or 0),
+                "route": route,
+            })
             route_line = f'<div style="color:#94a3b8;font-size:11px;">Rep route: {route}; 70/85/95% MTOW</div>'
             status = (
-                f'<span style="color:{color};font-weight:800;">{saved:+.2f}% fuel</span>'
+                f'<span style="color:{color};font-weight:800;">{savings:+.2f}% saved</span>'
                 f'{route_line}'
                 f'<div style="color:#f59e0b;font-size:11px;">Calibration pending</div>'
             )
@@ -352,7 +361,60 @@ def _mission_bins_html(bins: list[dict]) -> str:
             f'<td style="text-align:right;">FL{round((b.get("avg_altitude_ft") or 0)/100)}</td>'
             f'<td>{status}</td></tr>'
         )
-    return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">One row = one <b>distance × altitude</b> bin. Repeated stage lengths are not duplicates; they are the same distance band flown at different altitude bands. Status loads latest Tamarack_Mission_Analysis workup when available.</div><table><thead><tr><th>Stage Length Bin</th><th>Altitude Bin</th><th style="text-align:right;">Flights in Bin</th><th style="text-align:right;">Avg Dist</th><th style="text-align:right;">Avg FL</th><th>Sim Status</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table></div>'
+    chart_html = _mission_bins_summary_chart(chart_points)
+    return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">One row = one <b>distance × altitude</b> bin. Repeated stage lengths are not duplicates; they are the same distance band flown at different altitude bands. Status loads latest Tamarack_Mission_Analysis workup when available.</div><table><thead><tr><th>Stage Length Bin</th><th>Altitude Bin</th><th style="text-align:right;">Flights in Bin</th><th style="text-align:right;">Avg Dist</th><th style="text-align:right;">Avg FL</th><th>Sim Status</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>' + chart_html + '</div>'
+
+
+def _mission_bins_summary_chart(points: list[dict]) -> str:
+    points = [p for p in points if p.get("distance_nm") and p.get("savings_pct") is not None]
+    if not points:
+        return ""
+    width, height = 920, 280
+    ml, mr, mt, mb = 58, 22, 26, 42
+    max_x = max(p["distance_nm"] for p in points) or 1
+    min_y = min(0, min(p["savings_pct"] for p in points))
+    max_y = max(1, max(p["savings_pct"] for p in points))
+    pad_y = max(0.5, (max_y - min_y) * 0.15)
+    min_y -= pad_y
+    max_y += pad_y
+    def sx(x: float) -> float:
+        return ml + (x / max_x) * (width - ml - mr)
+    def sy(y: float) -> float:
+        return height - mb - ((y - min_y) / (max_y - min_y)) * (height - mt - mb)
+    colors = {
+        "< FL250": "#60a5fa",
+        "FL250–310": "#22c55e",
+        "FL310–350": "#eab308",
+        "FL350–390": "#f97316",
+        "FL390+": "#ef4444",
+    }
+    parts = [
+        '<div style="margin-top:18px;border-top:1px solid #334155;padding-top:14px;">',
+        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Summary: fuel savings vs representative distance</div>',
+        f'<svg width="100%" viewBox="0 0 {width} {height}" role="img" aria-label="Fuel savings summary chart">',
+        f'<rect x="0" y="0" width="{width}" height="{height}" rx="10" fill="#0f172a"/>',
+        f'<line x1="{ml}" y1="{height-mb}" x2="{width-mr}" y2="{height-mb}" stroke="#475569"/>',
+        f'<line x1="{ml}" y1="{mt}" x2="{ml}" y2="{height-mb}" stroke="#475569"/>',
+    ]
+    for i in range(5):
+        y = min_y + (max_y - min_y) * i / 4
+        parts.append(f'<line x1="{ml}" y1="{sy(y):.1f}" x2="{width-mr}" y2="{sy(y):.1f}" stroke="#1e293b"/>')
+        parts.append(f'<text x="{ml-8}" y="{sy(y)+4:.1f}" text-anchor="end" fill="#94a3b8" font-size="11">{y:.1f}%</text>')
+    zero_y = sy(0)
+    parts.append(f'<line x1="{ml}" y1="{zero_y:.1f}" x2="{width-mr}" y2="{zero_y:.1f}" stroke="#64748b" stroke-dasharray="4 4"/>')
+    for p in points:
+        radius = min(16, max(5, (p.get("flights") or 0) ** 0.5 / 2.5))
+        color = colors.get(p.get("altitude_bin"), "#a78bfa")
+        label = html.escape(f'{p.get("route", "")} {p.get("altitude_bin", "")}: {p["savings_pct"]:.2f}% saved')
+        parts.append(f'<circle cx="{sx(p["distance_nm"]):.1f}" cy="{sy(p["savings_pct"]):.1f}" r="{radius:.1f}" fill="{color}" stroke="#e2e8f0" stroke-width="1"><title>{label}</title></circle>')
+    parts.append(f'<text x="{width/2:.0f}" y="{height-12}" text-anchor="middle" fill="#94a3b8" font-size="12">Representative distance (nm)</text>')
+    parts.append(f'<text x="14" y="{height/2:.0f}" transform="rotate(-90 14 {height/2:.0f})" text-anchor="middle" fill="#94a3b8" font-size="12">Fuel saved (%)</text>')
+    lx = width - 160
+    ly = 28
+    for i, (name, color) in enumerate(colors.items()):
+        parts.append(f'<circle cx="{lx}" cy="{ly+i*18}" r="5" fill="{color}"/><text x="{lx+12}" y="{ly+i*18+4}" fill="#cbd5e1" font-size="11">{html.escape(name)}</text>')
+    parts.append('</svg></div>')
+    return ''.join(parts)
 
 
 def _opportunity_feed_html(items: list[dict]) -> str:

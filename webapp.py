@@ -390,7 +390,7 @@ def _mission_bins_summary_chart(points: list[dict]) -> str:
     }
     parts = [
         '<div style="margin-top:18px;border-top:1px solid #334155;padding-top:14px;">',
-        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Summary: fuel savings vs representative distance</div>',
+        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Summary: fuel savings vs representative stage length</div>',
         f'<svg width="100%" viewBox="0 0 {width} {height}" role="img" aria-label="Fuel savings summary chart">',
         f'<rect x="0" y="0" width="{width}" height="{height}" rx="10" fill="#0f172a"/>',
         f'<line x1="{ml}" y1="{height-mb}" x2="{width-mr}" y2="{height-mb}" stroke="#475569"/>',
@@ -400,6 +400,13 @@ def _mission_bins_summary_chart(points: list[dict]) -> str:
         y = min_y + (max_y - min_y) * i / 4
         parts.append(f'<line x1="{ml}" y1="{sy(y):.1f}" x2="{width-mr}" y2="{sy(y):.1f}" stroke="#1e293b"/>')
         parts.append(f'<text x="{ml-8}" y="{sy(y)+4:.1f}" text-anchor="end" fill="#94a3b8" font-size="11">{y:.1f}%</text>')
+    x_step = 250 if max_x <= 1500 else 500
+    x_tick = 0
+    while x_tick <= max_x + 1:
+        x_pos = sx(x_tick)
+        parts.append(f'<line x1="{x_pos:.1f}" y1="{height-mb}" x2="{x_pos:.1f}" y2="{height-mb+5}" stroke="#64748b"/>')
+        parts.append(f'<text x="{x_pos:.1f}" y="{height-mb+20}" text-anchor="middle" fill="#94a3b8" font-size="11">{int(x_tick)} nm</text>')
+        x_tick += x_step
     zero_y = sy(0)
     parts.append(f'<line x1="{ml}" y1="{zero_y:.1f}" x2="{width-mr}" y2="{zero_y:.1f}" stroke="#64748b" stroke-dasharray="4 4"/>')
     for p in points:
@@ -407,7 +414,8 @@ def _mission_bins_summary_chart(points: list[dict]) -> str:
         color = colors.get(p.get("altitude_bin"), "#a78bfa")
         label = html.escape(f'{p.get("route", "")} {p.get("altitude_bin", "")}: {p["savings_pct"]:.2f}% saved')
         parts.append(f'<circle cx="{sx(p["distance_nm"]):.1f}" cy="{sy(p["savings_pct"]):.1f}" r="{radius:.1f}" fill="{color}" stroke="#e2e8f0" stroke-width="1"><title>{label}</title></circle>')
-    parts.append(f'<text x="{width/2:.0f}" y="{height-12}" text-anchor="middle" fill="#94a3b8" font-size="12">Representative distance (nm)</text>')
+        parts.append(f'<text x="{sx(p["distance_nm"]):.1f}" y="{sy(p["savings_pct"])-radius-4:.1f}" text-anchor="middle" fill="#cbd5e1" font-size="10">{int(round(p["distance_nm"]))} nm</text>')
+    parts.append(f'<text x="{width/2:.0f}" y="{height-4}" text-anchor="middle" fill="#94a3b8" font-size="12">Representative stage length / distance (nm)</text>')
     parts.append(f'<text x="14" y="{height/2:.0f}" transform="rotate(-90 14 {height/2:.0f})" text-anchor="middle" fill="#94a3b8" font-size="12">Fuel saved (%)</text>')
     lx = width - 160
     ly = 28

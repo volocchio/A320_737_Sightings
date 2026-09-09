@@ -361,14 +361,22 @@ def _mission_bins_html(bins: list[dict]) -> str:
             f'<td style="text-align:right;">FL{round((b.get("avg_altitude_ft") or 0)/100)}</td>'
             f'<td>{status}</td></tr>'
         )
-    chart_html = _mission_bins_summary_chart(chart_points)
+    chart_html = _mission_bins_summary_charts(chart_points)
     return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">One row = one <b>distance × altitude</b> bin. Repeated stage lengths are not duplicates; they are the same distance band flown at different altitude bands. Status loads latest Tamarack_Mission_Analysis workup when available.</div><table><thead><tr><th>Stage Length Bin</th><th>Altitude Bin</th><th style="text-align:right;">Flights in Bin</th><th style="text-align:right;">Avg Dist</th><th style="text-align:right;">Avg FL</th><th>Sim Status</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table>' + chart_html + '</div>'
 
 
-def _mission_bins_summary_chart(points: list[dict]) -> str:
+def _mission_bins_summary_charts(points: list[dict]) -> str:
     points = [p for p in points if p.get("distance_nm") and p.get("savings_pct") is not None]
     if not points:
         return ""
+    return (
+        _mission_bins_bubble_chart(points)
+        + _mission_bins_stage_bar_chart(points)
+        + _mission_bins_weighted_line_chart(points)
+    )
+
+
+def _mission_bins_bubble_chart(points: list[dict]) -> str:
     width, height = 920, 280
     ml, mr, mt, mb = 58, 22, 26, 42
     max_x = max(p["distance_nm"] for p in points) or 1
@@ -389,7 +397,8 @@ def _mission_bins_summary_chart(points: list[dict]) -> str:
     }
     parts = [
         '<div style="margin-top:18px;border-top:1px solid #334155;padding-top:14px;">',
-        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Summary: fuel savings vs representative stage length</div>',
+        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Option A: savings bubbles by representative stage length</div>',
+        '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">Bubble size = flights in bin. Color = altitude band. This keeps altitude visible but does not over-sell it.</div>',
         f'<svg width="100%" viewBox="0 0 {width} {height}" role="img" aria-label="Fuel savings summary chart">',
         f'<rect x="0" y="0" width="{width}" height="{height}" rx="10" fill="#0f172a"/>',
         f'<line x1="{ml}" y1="{height-mb}" x2="{width-mr}" y2="{height-mb}" stroke="#475569"/>',
@@ -421,6 +430,110 @@ def _mission_bins_summary_chart(points: list[dict]) -> str:
     ly = 28
     for i, (name, color) in enumerate(colors.items()):
         parts.append(f'<circle cx="{lx}" cy="{ly+i*18}" r="5" fill="{color}"/><text x="{lx+12}" y="{ly+i*18+4}" fill="#cbd5e1" font-size="11">{html.escape(name)}</text>')
+    parts.append('</svg></div>')
+    return ''.join(parts)
+
+
+def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
+    """Aggregate by stage-length bin; weighted by observed flight count."""
+    grouped: dict[str, dict] = {}
+    for p in points:
+        stage = str(p.get("distance_bin") or "")
+        flights = max(1, int(p.get("flights") or 0))
+        g = grouped.setdefault(stage, {"flights": 0, "weighted": 0.0, "alts": set()})
+        g["flights"] += flights
+        g["weighted"] += flights * float(p.get("savings_pct") or 0)
+        g["alts"].add(str(p.get("altitude_bin") or ""))
+    rows = []
+    for stage, g in grouped.items():
+        avg = g["weighted"] / g["flights"] if g["flights"] else 0
+        # sort by first number in label
+        try:
+            order = int(stage.split("–", 1)[0].replace(",", ""))
+        except Exception:
+            order = 99999
+        rows.append((order, stage, avg, g["flights"], sorted(g["alts"])))
+    rows.sort()
+    if not rows:
+        return ""
+    width, height = 920, 300
+    ml, mr, mt, mb = 58, 24, 34, 62
+    max_y = max(1, max(r[2] for r in rows)) * 1.18
+    bar_gap = 16
+    bar_w = max(24, (width - ml - mr - bar_gap * (len(rows) - 1)) / max(1, len(rows)))
+    def sy(y: float) -> float:
+        return height - mb - (max(0, y) / max_y) * (height - mt - mb)
+    parts = [
+        '<div style="margin-top:18px;border-top:1px solid #334155;padding-top:14px;">',
+        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Option B: weighted average savings by stage-length bin</div>',
+        '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">Combines altitude bands using flight-count weighting. Cleaner if FL does not drive much separation.</div>',
+        f'<svg width="100%" viewBox="0 0 {width} {height}" role="img" aria-label="Weighted savings by stage length">',
+        f'<rect x="0" y="0" width="{width}" height="{height}" rx="10" fill="#0f172a"/>',
+    ]
+    for i in range(5):
+        y = max_y * i / 4
+        parts.append(f'<line x1="{ml}" y1="{sy(y):.1f}" x2="{width-mr}" y2="{sy(y):.1f}" stroke="#1e293b"/>')
+        parts.append(f'<text x="{ml-8}" y="{sy(y)+4:.1f}" text-anchor="end" fill="#94a3b8" font-size="11">{y:.1f}%</text>')
+    for i, (_, stage, avg, flights, alts) in enumerate(rows):
+        x = ml + i * (bar_w + bar_gap)
+        y = sy(avg)
+        h = height - mb - y
+        color = "#22c55e" if avg >= 0 else "#ef4444"
+        title = html.escape(f'{stage}: {avg:.2f}% saved, {flights:,} flights, altitude bands: {", ".join(alts)}')
+        parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" rx="5" fill="{color}"><title>{title}</title></rect>')
+        parts.append(f'<text x="{x+bar_w/2:.1f}" y="{y-6:.1f}" text-anchor="middle" fill="#e2e8f0" font-size="11">{avg:.1f}%</text>')
+        parts.append(f'<text x="{x+bar_w/2:.1f}" y="{height-mb+18}" text-anchor="middle" fill="#94a3b8" font-size="10">{html.escape(stage)}</text>')
+        parts.append(f'<text x="{x+bar_w/2:.1f}" y="{height-mb+34}" text-anchor="middle" fill="#64748b" font-size="10">{flights:,} flts</text>')
+    parts.append(f'<text x="14" y="{height/2:.0f}" transform="rotate(-90 14 {height/2:.0f})" text-anchor="middle" fill="#94a3b8" font-size="12">Weighted fuel saved (%)</text>')
+    parts.append('</svg></div>')
+    return ''.join(parts)
+
+
+def _mission_bins_weighted_line_chart(points: list[dict]) -> str:
+    """Single investor-friendly line: weighted stage-length average."""
+    grouped: dict[str, dict] = {}
+    for p in points:
+        stage = str(p.get("distance_bin") or "")
+        flights = max(1, int(p.get("flights") or 0))
+        g = grouped.setdefault(stage, {"distance": 0.0, "flights": 0, "weighted": 0.0})
+        g["distance"] += flights * float(p.get("distance_nm") or 0)
+        g["flights"] += flights
+        g["weighted"] += flights * float(p.get("savings_pct") or 0)
+    rows = []
+    for stage, g in grouped.items():
+        if not g["flights"]:
+            continue
+        rows.append((g["distance"] / g["flights"], g["weighted"] / g["flights"], stage, g["flights"]))
+    rows.sort()
+    if len(rows) < 2:
+        return ""
+    width, height = 920, 280
+    ml, mr, mt, mb = 58, 24, 30, 42
+    max_x = max(r[0] for r in rows) or 1
+    max_y = max(1, max(r[1] for r in rows)) * 1.18
+    def sx(x: float) -> float:
+        return ml + (x / max_x) * (width - ml - mr)
+    def sy(y: float) -> float:
+        return height - mb - (max(0, y) / max_y) * (height - mt - mb)
+    pts = " ".join(f'{sx(x):.1f},{sy(y):.1f}' for x, y, _, _ in rows)
+    parts = [
+        '<div style="margin-top:18px;border-top:1px solid #334155;padding-top:14px;">',
+        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Option C: single clean benefit curve</div>',
+        '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">Flight-count-weighted by stage-length bin. This is probably the deck chart if we want one simple story.</div>',
+        f'<svg width="100%" viewBox="0 0 {width} {height}" role="img" aria-label="Single weighted benefit curve">',
+        f'<rect x="0" y="0" width="{width}" height="{height}" rx="10" fill="#0f172a"/>',
+    ]
+    for i in range(5):
+        y = max_y * i / 4
+        parts.append(f'<line x1="{ml}" y1="{sy(y):.1f}" x2="{width-mr}" y2="{sy(y):.1f}" stroke="#1e293b"/>')
+        parts.append(f'<text x="{ml-8}" y="{sy(y)+4:.1f}" text-anchor="end" fill="#94a3b8" font-size="11">{y:.1f}%</text>')
+    parts.append(f'<polyline points="{pts}" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>')
+    for x, y, stage, flights in rows:
+        title = html.escape(f'{stage}: {y:.2f}% saved, {flights:,} flights')
+        parts.append(f'<circle cx="{sx(x):.1f}" cy="{sy(y):.1f}" r="6" fill="#22c55e" stroke="#e2e8f0"><title>{title}</title></circle>')
+        parts.append(f'<text x="{sx(x):.1f}" y="{sy(y)-12:.1f}" text-anchor="middle" fill="#cbd5e1" font-size="10">{int(round(x))} nm</text>')
+    parts.append(f'<text x="{width/2:.0f}" y="{height-8}" text-anchor="middle" fill="#94a3b8" font-size="12">Representative stage length (nm)</text>')
+    parts.append(f'<text x="14" y="{height/2:.0f}" transform="rotate(-90 14 {height/2:.0f})" text-anchor="middle" fill="#94a3b8" font-size="12">Weighted fuel saved (%)</text>')
     parts.append('</svg></div>')
     return ''.join(parts)
 

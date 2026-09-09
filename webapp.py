@@ -2756,9 +2756,6 @@ def _watch_pill_html() -> str:
 
 def _chat_widget_html() -> str:
     """Floating bottom-right chat widget powered by the /api/chat endpoint."""
-    # Hidden from the phone-facing dashboard for now. The backend chat endpoints
-    # remain available, but the floating FAB was covering mission-bin content.
-    return ""
     enabled = config.OPENAI_ENABLED
     teams   = config.TEAMS_ENABLED
     status_dot = "#22c55e" if enabled else "#64748b"

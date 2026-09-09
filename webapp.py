@@ -371,9 +371,11 @@ def _mission_bins_summary_charts(points: list[dict]) -> str:
     if not points:
         return ""
     return (
-        _mission_bins_bubble_chart(points)
-        + _mission_bins_stage_bar_chart(points)
+        _mission_bins_stage_bar_chart(points)
+        + '<details style="margin-top:12px;"><summary style="cursor:pointer;color:#94a3b8;font-size:12px;font-weight:700;">Alternate chart views</summary>'
+        + _mission_bins_bubble_chart(points)
         + _mission_bins_weighted_line_chart(points)
+        + '</details>'
     )
 
 
@@ -466,8 +468,8 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
         return height - mb - (max(0, y) / max_y) * (height - mt - mb)
     parts = [
         '<div style="margin-top:18px;border-top:1px solid #334155;padding-top:14px;">',
-        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Option B: weighted average savings by stage-length bin</div>',
-        '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">Combines altitude bands using flight-count weighting. Cleaner if FL does not drive much separation.</div>',
+        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Fuel savings by representative stage-length bin</div>',
+        '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">Primary view: combines altitude bands using flight-count weighting. Cleaner since FL does not drive much separation.</div>',
         f'<svg width="100%" viewBox="0 0 {width} {height}" role="img" aria-label="Weighted savings by stage length">',
         f'<rect x="0" y="0" width="{width}" height="{height}" rx="10" fill="#0f172a"/>',
     ]

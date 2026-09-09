@@ -336,9 +336,10 @@ def _mission_bins_html(bins: list[dict]) -> str:
             saved = float(sim.get("fuel_saved_pct_avg") or 0)
             color = "#22c55e" if saved >= 0 else "#ef4444"
             route = f'{html.escape(sim.get("sim_dep_icao") or "")}→{html.escape(sim.get("sim_arr_icao") or "")}'
+            route_line = f'<div style="color:#94a3b8;font-size:11px;">Rep route: {route}; 70/85/95% MTOW</div>'
             status = (
                 f'<span style="color:{color};font-weight:800;">{saved:+.2f}% fuel</span>'
-                f'<div style="color:#94a3b8;font-size:11px;">{route}; 70/85/95% MTOW sweep</div>'
+                f'{route_line}'
                 f'<div style="color:#f59e0b;font-size:11px;">Calibration pending</div>'
             )
         else:
@@ -351,7 +352,7 @@ def _mission_bins_html(bins: list[dict]) -> str:
             f'<td style="text-align:right;">FL{round((b.get("avg_altitude_ft") or 0)/100)}</td>'
             f'<td>{status}</td></tr>'
         )
-    return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">Observed flights grouped into representative simulator cases. Status loads latest Tamarack_Mission_Analysis workup when available.</div><table><thead><tr><th>Stage Length</th><th>Altitude Band</th><th style="text-align:right;">Flights</th><th style="text-align:right;">Avg Dist</th><th style="text-align:right;">Avg FL</th><th>Sim Status</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table></div>'
+    return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">One row = one <b>distance × altitude</b> bin. Repeated stage lengths are not duplicates; they are the same distance band flown at different altitude bands. Status loads latest Tamarack_Mission_Analysis workup when available.</div><table><thead><tr><th>Stage Length Bin</th><th>Altitude Bin</th><th style="text-align:right;">Flights in Bin</th><th style="text-align:right;">Avg Dist</th><th style="text-align:right;">Avg FL</th><th>Sim Status</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table></div>'
 
 
 def _opportunity_feed_html(items: list[dict]) -> str:

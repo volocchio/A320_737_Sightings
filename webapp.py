@@ -375,7 +375,6 @@ def _mission_bins_summary_chart(points: list[dict]) -> str:
     min_y = 0
     max_y = max(1, max(p["savings_pct"] for p in points))
     pad_y = max(0.5, (max_y - min_y) * 0.15)
-    min_y -= pad_y
     max_y += pad_y
     def sx(x: float) -> float:
         return ml + (x / max_x) * (width - ml - mr)

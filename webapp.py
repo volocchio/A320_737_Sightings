@@ -3426,7 +3426,7 @@ def dashboard():
   <meta http-equiv="refresh" content="60">
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    /* Bottom padding for mobile controls */
+    /* Bottom padding so the floating "Ask AI" bubble doesn't cover the bottom pagination row */
     body {{ background: #0f172a; color: #e2e8f0; font-family: Arial, sans-serif; padding: 24px 24px 110px; }}
     h1 {{ font-size: 24px; font-weight: bold; margin-bottom: 4px; }}
     .sub {{ color: #94a3b8; font-size: 13px; margin-bottom: 12px; }}

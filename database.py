@@ -3044,7 +3044,8 @@ def get_airline_mission_bins(region: str | None = "NA", family: str | None = "A3
     family_sql, family_args = family_where_clause(family)
     rows_sql = f"""
         SELECT distance_nm,
-               COALESCE(sustained_top_alt_ft, top_altitude_ft, initial_cruise_alt_ft) AS alt_ft
+               COALESCE(sustained_top_alt_ft, top_altitude_ft, initial_cruise_alt_ft) AS alt_ft,
+               origin_icao, dest_icao, tail_number, operator, arrived_utc
         FROM v_sightings_dedup
         WHERE distance_nm IS NOT NULL AND distance_nm > 0{region_sql}{family_sql}
     """
@@ -3083,10 +3084,26 @@ def get_airline_mission_bins(region: str | None = "NA", family: str | None = "A3
             "count": 0,
             "sum_distance_nm": 0.0,
             "sum_altitude_ft": 0,
+            "representative_flight": None,
+            "representative_error": 10**9,
         })
         b["count"] += 1
         b["sum_distance_nm"] += dist
         b["sum_altitude_ft"] += alt
+        # Pick the real flight closest to the bin representative distance+altitude.
+        # This gives the simulator an actual airport pair instead of a synthetic leg.
+        err = abs(dist - d_bin[3]) + abs((alt - a_bin[3]) / 1000.0) * 25.0
+        if r.get("origin_icao") and r.get("dest_icao") and err < b.get("representative_error", 10**9):
+            b["representative_error"] = err
+            b["representative_flight"] = {
+                "origin_icao": r.get("origin_icao"),
+                "dest_icao": r.get("dest_icao"),
+                "tail_number": r.get("tail_number"),
+                "operator": r.get("operator"),
+                "distance_nm": round(dist),
+                "altitude_ft": alt,
+                "arrived_utc": r.get("arrived_utc"),
+            }
 
     out = []
     for b in buckets.values():
@@ -3100,6 +3117,7 @@ def get_airline_mission_bins(region: str | None = "NA", family: str | None = "A3
             "avg_distance_nm": round(b["sum_distance_nm"] / n),
             "avg_altitude_ft": round(b["sum_altitude_ft"] / n),
             "sim_status": "pending_a320_config",
+            "representative_flight": b.get("representative_flight"),
         })
     out.sort(key=lambda x: (-x["count"], x["representative_distance_nm"], x["representative_altitude_ft"]))
     return out[:12]

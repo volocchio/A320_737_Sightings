@@ -553,7 +553,7 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
         y = max_y * i / 4
         parts.append(f'<line x1="{ml}" y1="{sy(y):.1f}" x2="{width-mr}" y2="{sy(y):.1f}" stroke="#1e293b"/>')
         parts.append(f'<text x="{ml-8}" y="{sy(y)+4:.1f}" text-anchor="end" fill="#94a3b8" font-size="11">{y:.1f}%</text>')
-    region_colors = {"NA": "#22c55e", "EU_UK": "#60a5fa"}
+    region_colors = {"NA": "#f97316", "EU_UK": "#22c55e"}
     region_labels = {"NA": "NA", "EU_UK": "EU/UK"}
     for i, stage in enumerate(stages):
         group_x = ml + i * (group_w + bar_gap)
@@ -618,7 +618,7 @@ def _mission_bins_weighted_line_chart(points: list[dict]) -> str:
         y = max_y * i / 4
         parts.append(f'<line x1="{ml}" y1="{sy(y):.1f}" x2="{width-mr}" y2="{sy(y):.1f}" stroke="#1e293b"/>')
         parts.append(f'<text x="{ml-8}" y="{sy(y)+4:.1f}" text-anchor="end" fill="#94a3b8" font-size="11">{y:.1f}%</text>')
-    region_colors = {"NA": "#22c55e", "EU_UK": "#60a5fa"}
+    region_colors = {"NA": "#f97316", "EU_UK": "#22c55e"}
     region_labels = {"NA": "NA", "EU_UK": "EU/UK"}
     for reg, rows in by_region.items():
         if len(rows) < 2:

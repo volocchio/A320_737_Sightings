@@ -11,6 +11,8 @@ Exposes:
 
 import csv
 import html
+import json
+from pathlib import Path
 import io
 import json as _json
 import sqlite3
@@ -37,6 +39,25 @@ import watch_tails
 import notify_settings
 
 app = Flask(__name__)
+
+SIM_RESULTS_PATHS = [
+    Path("/tmp/tma_a320_bin_sim.json"),
+    Path("./tma_a320_bin_sim.json"),
+]
+
+
+def _load_sim_result_index() -> dict[tuple[str, str], dict]:
+    for path in SIM_RESULTS_PATHS:
+        try:
+            if path.exists():
+                data = json.loads(path.read_text())
+                return {
+                    (str(r.get("distance_bin") or ""), str(r.get("altitude_bin") or "")): r
+                    for r in data.get("rows", [])
+                }
+        except Exception:
+            continue
+    return {}
 
 # ── Usage tracking: "Who are you?" cookie + page-view logger ────────────────
 
@@ -306,17 +327,31 @@ def _family_filter_html(active: str | None, base_path: str) -> str:
 def _mission_bins_html(bins: list[dict]) -> str:
     if not bins:
         return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;">No distance/altitude bins yet for this filter.</div></div>'
+    sim_index = _load_sim_result_index()
     rows = []
     for b in bins[:10]:
+        key = (str(b.get("distance_bin") or ""), str(b.get("altitude_bin") or ""))
+        sim = sim_index.get(key)
+        if sim and sim.get("fuel_saved_pct_avg") is not None:
+            saved = float(sim.get("fuel_saved_pct_avg") or 0)
+            color = "#22c55e" if saved >= 0 else "#ef4444"
+            route = f'{html.escape(sim.get("sim_dep_icao") or "")}→{html.escape(sim.get("sim_arr_icao") or "")}'
+            status = (
+                f'<span style="color:{color};font-weight:800;">{saved:+.2f}% fuel</span>'
+                f'<div style="color:#94a3b8;font-size:11px;">{route}; 70/85/95% MTOW sweep</div>'
+                f'<div style="color:#f59e0b;font-size:11px;">Calibration pending</div>'
+            )
+        else:
+            status = '<span style="color:#f59e0b;font-weight:700;">Awaiting sim run</span>'
         rows.append(
             f'<tr><td>{html.escape(b.get("distance_bin") or "—")}</td>'
             f'<td>{html.escape(b.get("altitude_bin") or "—")}</td>'
             f'<td style="text-align:right;color:#60a5fa;font-weight:800;">{int(b.get("count") or 0):,}</td>'
             f'<td style="text-align:right;">{int(b.get("avg_distance_nm") or 0):,} nm</td>'
             f'<td style="text-align:right;">FL{round((b.get("avg_altitude_ft") or 0)/100)}</td>'
-            f'<td><span style="color:#f59e0b;font-weight:700;">Awaiting A320 sim config</span></td></tr>'
+            f'<td>{status}</td></tr>'
         )
-    return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">Observed flights grouped into representative simulator cases. This is the handoff layer for Tamarack fuel/WAT benefit runs.</div><table><thead><tr><th>Stage Length</th><th>Altitude Band</th><th style="text-align:right;">Flights</th><th style="text-align:right;">Avg Dist</th><th style="text-align:right;">Avg FL</th><th>Status</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table></div>'
+    return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">Observed flights grouped into representative simulator cases. Status loads latest Tamarack_Mission_Analysis workup when available.</div><table><thead><tr><th>Stage Length</th><th>Altitude Band</th><th style="text-align:right;">Flights</th><th style="text-align:right;">Avg Dist</th><th style="text-align:right;">Avg FL</th><th>Sim Status</th></tr></thead><tbody>' + ''.join(rows) + '</tbody></table></div>'
 
 
 def _opportunity_feed_html(items: list[dict]) -> str:

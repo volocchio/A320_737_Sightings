@@ -3772,12 +3772,7 @@ def _plan_card(p: dict, compact: bool = False) -> str:
             f'<span style="font-size:12px;color:#e2e8f0;line-height:1.5;">'
             f'<span style="color:#64748b;">Text {j}:</span> {_esc(t)}</span></div>')
 
-    # Ask-AI nudge
-    ai_q = f"who else does {p.get('operator') or owner} operate and how do they fly"
-    ai_btn = (f'<button onclick="askAI(\'{_esc(ai_q)}\')" '
-              f'style="margin-top:8px;background:#1d4ed8;color:#fff;border:none;'
-              f'padding:4px 10px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;">'
-              f'💬 Ask AI about this operator</button>')
+    ai_btn = ""
 
     # Checklist buttons
     btns = ""

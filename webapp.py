@@ -340,6 +340,7 @@ def _mission_bins_html(bins: list[dict]) -> str:
             route = f'{html.escape(sim.get("sim_dep_icao") or "")}→{html.escape(sim.get("sim_arr_icao") or "")}'
             chart_points.append({
                 "distance_nm": float(sim.get("representative_distance_nm") or b.get("avg_distance_nm") or 0),
+                "distance_bin": str(sim.get("distance_bin") or b.get("distance_bin") or ""),
                 "savings_pct": savings,
                 "altitude_bin": str(sim.get("altitude_bin") or b.get("altitude_bin") or ""),
                 "flights": int(b.get("count") or 0),

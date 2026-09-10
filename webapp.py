@@ -510,22 +510,17 @@ def _mission_bins_bubble_chart(points: list[dict]) -> str:
 def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
     """Aggregate by stage-length bin and region; weighted by observed flight count."""
     grouped: dict[tuple[str, str], dict] = {}
-    stage_distance: dict[str, float] = {}
     for p in points:
         stage = str(p.get("distance_bin") or "")
         region = str(p.get("region") or "NA")
         flights = max(1, int(p.get("flights") or 0))
-        dist = float(p.get("distance_nm") or 0)
-        g = grouped.setdefault((stage, region), {"flights": 0, "weighted": 0.0, "alts": set(), "distance": 0.0})
+        g = grouped.setdefault((stage, region), {"flights": 0, "weighted": 0.0, "alts": set()})
         g["flights"] += flights
         g["weighted"] += flights * float(p.get("savings_pct") or 0)
-        g["distance"] += flights * dist
         g["alts"].add(str(p.get("altitude_bin") or ""))
     stage_rows: dict[str, dict[str, tuple[float, int, list[str]]]] = {}
     for (stage, region), g in grouped.items():
         avg = g["weighted"] / g["flights"] if g["flights"] else 0
-        dist = g["distance"] / g["flights"] if g["flights"] else 0
-        stage_distance[stage] = dist or stage_distance.get(stage, 0)
         stage_rows.setdefault(stage, {})[region] = (avg, g["flights"], sorted(g["alts"]))
     def stage_order(stage: str) -> int:
         try:
@@ -537,33 +532,41 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
     if not stages:
         return ""
 
-    width, height = 920, 330
-    ml, mr, mt, mb = 58, 28, 44, 70
+    # Phone-first SVG: small coordinate space scales cleanly in Telegram/mobile.
+    width, height = 390, 260
+    ml, mr, mt, mb = 38, 12, 34, 56
     plot_w = width - ml - mr
     plot_h = height - mt - mb
     vals = [max(0.0, v[0]) for rs in stage_rows.values() for v in rs.values()]
-    max_y = max(1.0, max(vals or [1.0])) * 1.20
-    group_gap = 18
-    group_w = max(54, (plot_w - group_gap * (len(stages) - 1)) / max(1, len(stages)))
-    bar_gap = 5
-    bar_w = max(16, (group_w - bar_gap) / 2)
+    max_y = max(1.0, max(vals or [1.0])) * 1.25
+    group_gap = 6
+    group_w = (plot_w - group_gap * (len(stages) - 1)) / max(1, len(stages))
+    bar_gap = 2
+    bar_w = max(7, (group_w - bar_gap) / 2)
     def sy(v: float) -> float:
         return height - mb - (max(0.0, v) / max_y) * plot_h
     region_colors = {"NA": "#f97316", "EU_UK": "#22c55e"}
     region_labels = {"NA": "NA", "EU_UK": "EU/UK"}
+    short_labels = {
+        "0–250 nm": "0-250",
+        "250–500 nm": "250-500",
+        "500–750 nm": "500-750",
+        "750–1000 nm": "750-1k",
+        "1000–1500 nm": "1k-1.5k",
+        "1500+ nm": "1.5k+",
+    }
     parts = [
         '<div style="margin-top:18px;border-top:1px solid #334155;padding-top:14px;">',
-        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Fuel savings by representative stage length — NA vs EU/UK</div>',
-        '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Horizontal axis = stage length / distance. Green = EU/UK, orange = North America. Scroll sideways on mobile.</div>',
-        '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;">',
-        f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" style="min-width:{width}px;display:block;" role="img" aria-label="Weighted savings by stage length">',
-        f'<rect x="0" y="0" width="{width}" height="{height}" rx="12" fill="#0f172a"/>',
+        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Fuel savings by stage length — NA vs EU/UK</div>',
+        '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">X-axis = distance bin. Green = EU/UK, orange = North America.</div>',
+        f'<svg width="100%" viewBox="0 0 {width} {height}" style="display:block;max-width:100%;" role="img" aria-label="Weighted savings by stage length">',
+        f'<rect x="0" y="0" width="{width}" height="{height}" rx="10" fill="#0f172a"/>',
     ]
     for i in range(5):
         v = max_y * i / 4
         y = sy(v)
         parts.append(f'<line x1="{ml}" y1="{y:.1f}" x2="{width-mr}" y2="{y:.1f}" stroke="#1e293b"/>')
-        parts.append(f'<text x="{ml-8}" y="{y+4:.1f}" text-anchor="end" fill="#94a3b8" font-size="11">{v:.1f}%</text>')
+        parts.append(f'<text x="{ml-5}" y="{y+3:.1f}" text-anchor="end" fill="#94a3b8" font-size="8">{v:.1f}</text>')
     parts.append(f'<line x1="{ml}" y1="{mt}" x2="{ml}" y2="{height-mb}" stroke="#475569"/>')
     parts.append(f'<line x1="{ml}" y1="{height-mb}" x2="{width-mr}" y2="{height-mb}" stroke="#475569"/>')
 
@@ -575,24 +578,23 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
             color = region_colors.get(reg, "#a78bfa")
             label = region_labels.get(reg, reg)
             if reg not in stage_rows[stage]:
-                parts.append(f'<rect x="{x:.1f}" y="{height-mb-2:.1f}" width="{bar_w:.1f}" height="2" rx="2" fill="#334155"><title>{html.escape(stage)} {label}: no data</title></rect>')
+                parts.append(f'<rect x="{x:.1f}" y="{height-mb-1.5:.1f}" width="{bar_w:.1f}" height="1.5" rx="1" fill="#334155"><title>{html.escape(stage)} {label}: no data</title></rect>')
                 continue
             avg, flights, alts = stage_rows[stage][reg]
             shown = max(0.0, avg)
             y = sy(shown)
             h = max(2.0, height - mb - y) if shown > 0 else 2.0
             title = html.escape(f'{stage} {label}: {avg:.2f}% saved, {flights:,} flights, altitude bands: {", ".join(alts)}')
-            parts.append(f'<rect x="{x:.1f}" y="{height-mb-h:.1f}" width="{bar_w:.1f}" height="{h:.1f}" rx="4" fill="{color}"><title>{title}</title></rect>')
-            if shown >= 0.05:
-                parts.append(f'<text x="{x+bar_w/2:.1f}" y="{height-mb-h-5:.1f}" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="700">{avg:.1f}</text>')
-        short_stage = html.escape(stage.replace(" nm", "").replace("–", "-"))
-        parts.append(f'<text x="{cx:.1f}" y="{height-mb+18}" text-anchor="middle" fill="#cbd5e1" font-size="10" font-weight="700">{short_stage}</text>')
-    lx = width - 190
-    parts.append(f'<rect x="{lx}" y="18" width="12" height="12" rx="2" fill="#22c55e"/><text x="{lx+18}" y="29" fill="#cbd5e1" font-size="12">EU/UK</text>')
-    parts.append(f'<rect x="{lx+86}" y="18" width="12" height="12" rx="2" fill="#f97316"/><text x="{lx+104}" y="29" fill="#cbd5e1" font-size="12">NA</text>')
-    parts.append(f'<text x="{width/2:.0f}" y="{height-8}" text-anchor="middle" fill="#94a3b8" font-size="12">Stage length / distance bin (nm)</text>')
-    parts.append(f'<text x="14" y="{height/2:.0f}" transform="rotate(-90 14 {height/2:.0f})" text-anchor="middle" fill="#94a3b8" font-size="12">Weighted fuel saved (%)</text>')
-    parts.append('</svg></div></div>')
+            parts.append(f'<rect x="{x:.1f}" y="{height-mb-h:.1f}" width="{bar_w:.1f}" height="{h:.1f}" rx="2" fill="{color}"><title>{title}</title></rect>')
+            if shown >= 0.25:
+                parts.append(f'<text x="{x+bar_w/2:.1f}" y="{height-mb-h-3:.1f}" text-anchor="middle" fill="#e2e8f0" font-size="7" font-weight="700">{avg:.1f}</text>')
+        lbl = html.escape(short_labels.get(stage, stage.replace(" nm", "").replace("–", "-")))
+        parts.append(f'<text x="{cx:.1f}" y="{height-mb+12}" text-anchor="middle" fill="#cbd5e1" font-size="8" font-weight="700">{lbl}</text>')
+    parts.append(f'<rect x="{width-116}" y="13" width="8" height="8" rx="1" fill="#22c55e"/><text x="{width-104}" y="21" fill="#cbd5e1" font-size="9">EU/UK</text>')
+    parts.append(f'<rect x="{width-58}" y="13" width="8" height="8" rx="1" fill="#f97316"/><text x="{width-46}" y="21" fill="#cbd5e1" font-size="9">NA</text>')
+    parts.append(f'<text x="{width/2:.0f}" y="{height-8}" text-anchor="middle" fill="#94a3b8" font-size="9">Distance bin (nm)</text>')
+    parts.append(f'<text x="12" y="{height/2:.0f}" transform="rotate(-90 12 {height/2:.0f})" text-anchor="middle" fill="#94a3b8" font-size="9">Fuel saved (%)</text>')
+    parts.append('</svg></div>')
     return ''.join(parts)
 
 

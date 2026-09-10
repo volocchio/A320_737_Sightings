@@ -423,7 +423,7 @@ def _mission_bins_html(bins: list[dict], region: str = "NA") -> str:
 
 
 def _mission_bins_summary_charts(points: list[dict]) -> str:
-    points = [p for p in points if p.get("distance_nm") and p.get("savings_pct") is not None]
+    points = [p for p in points if p.get("distance_nm") and p.get("savings_pct") is not None and abs(float(p.get("savings_pct") or 0)) >= 0.05]
     if not points:
         return ""
     return _mission_bins_stage_bar_chart(points)

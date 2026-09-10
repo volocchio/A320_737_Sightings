@@ -536,7 +536,7 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
     width = 920
     row_h = 48
     height = 118 + row_h * len(stages)
-    ml, mr, mt, mb = 142, 72, 56, 42
+    ml, mr, mt, mb = 118, 72, 56, 42
     vals = [abs(v[0]) for rs in stage_rows.values() for v in rs.values()]
     max_x = max(1.0, max(vals or [1.0])) * 1.20
     plot_w = width - ml - mr
@@ -547,7 +547,7 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
     parts = [
         '<div style="margin-top:18px;border-top:1px solid #334155;padding-top:14px;">',
         '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Fuel savings by representative stage-length bin — NA vs EU/UK</div>',
-        '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Horizontal paired bars: green = EU/UK, orange = North America. Altitude bands are flight-count weighted inside each stage-length bin.</div>',
+        '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Green = EU/UK, orange = North America. Labels show weighted fuel saved by stage length.</div>',
         f'<svg width="100%" viewBox="0 0 {width} {height}" role="img" aria-label="Weighted savings by stage length">',
         f'<rect x="0" y="0" width="{width}" height="{height}" rx="12" fill="#0f172a"/>',
     ]
@@ -563,14 +563,15 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
     bar_h = 14
     for i, stage in enumerate(stages):
         y0 = mt + i * row_h
-        parts.append(f'<text x="{ml-12}" y="{y0+23}" text-anchor="end" fill="#cbd5e1" font-size="13" font-weight="700">{html.escape(stage)}</text>')
+        short_stage = html.escape(stage.replace(" nm", "").replace("–", "-"))
+        parts.append(f'<text x="{ml-10}" y="{y0+23}" text-anchor="end" fill="#cbd5e1" font-size="13" font-weight="700">{short_stage}</text>')
         parts.append(f'<line x1="{ml}" y1="{y0+40}" x2="{width-mr}" y2="{y0+40}" stroke="#172033"/>')
         for j, reg in enumerate(regions):
             y = y0 + 5 + j * 19
             label = region_labels.get(reg, reg)
             color = region_colors.get(reg, "#a78bfa")
             if reg not in stage_rows[stage]:
-                parts.append(f'<text x="{ml+4}" y="{y+11}" fill="#64748b" font-size="11">{label}: no data</text>')
+                parts.append(f'<text x="{ml+4}" y="{y+11}" fill="#64748b" font-size="11">—</text>')
                 continue
             avg, flights, alts = stage_rows[stage][reg]
             shown = max(0.0, avg)
@@ -578,12 +579,15 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
             w = max(2.0, x2 - ml) if shown > 0 else 2.0
             title = html.escape(f'{stage} {label}: {avg:.2f}% saved, {flights:,} flights, altitude bands: {", ".join(alts)}')
             parts.append(f'<rect x="{ml}" y="{y}" width="{w:.1f}" height="{bar_h}" rx="4" fill="{color}"><title>{title}</title></rect>')
-            txt_x = min(width - mr - 6, ml + w + 8)
-            parts.append(f'<text x="{txt_x:.1f}" y="{y+11}" fill="#e2e8f0" font-size="12" font-weight="700">{label} {avg:.1f}%</text>')
+            if shown >= 0.05:
+                txt_x = min(width - mr - 6, ml + w + 8)
+                parts.append(f'<text x="{txt_x:.1f}" y="{y+11}" fill="#e2e8f0" font-size="12" font-weight="700">{label} {avg:.1f}%</text>')
+            else:
+                parts.append(f'<text x="{ml+8}" y="{y+11}" fill="#94a3b8" font-size="11">{label}</text>')
     lx = width - 190
     parts.append(f'<rect x="{lx}" y="18" width="12" height="12" rx="2" fill="#22c55e"/><text x="{lx+18}" y="29" fill="#cbd5e1" font-size="12">EU/UK</text>')
     parts.append(f'<rect x="{lx+86}" y="18" width="12" height="12" rx="2" fill="#f97316"/><text x="{lx+104}" y="29" fill="#cbd5e1" font-size="12">NA</text>')
-    parts.append(f'<text x="{(ml+width-mr)/2:.0f}" y="{height-2}" text-anchor="middle" fill="#94a3b8" font-size="12">Weighted fuel saved (%)</text>')
+    parts.append(f'<text x="{(ml+width-mr)/2:.0f}" y="{height-2}" text-anchor="middle" fill="#94a3b8" font-size="12">Weighted fuel saved (%) · stage length in nm</text>')
     parts.append('</svg></div>')
     return ''.join(parts)
 

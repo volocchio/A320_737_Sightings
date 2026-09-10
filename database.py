@@ -3075,8 +3075,10 @@ def get_airline_mission_bins(region: str | None = "NA", family: str | None = "A3
         a_bin = next((b for b in alt_bins if b[0] <= alt < b[1]), None) if alt else None
         if not d_bin or not a_bin:
             continue
-        key = (d_bin[2], a_bin[2])
+        row_region = str(r.get("region") or region or "NA")
+        key = (row_region, d_bin[2], a_bin[2])
         b = buckets.setdefault(key, {
+            "region": row_region,
             "distance_bin": d_bin[2],
             "altitude_bin": a_bin[2],
             "representative_distance_nm": d_bin[3],
@@ -3112,6 +3114,7 @@ def get_airline_mission_bins(region: str | None = "NA", family: str | None = "A3
     for b in buckets.values():
         n = b["count"] or 1
         out.append({
+            "region": b.get("region") or region or "NA",
             "distance_bin": b["distance_bin"],
             "altitude_bin": b["altitude_bin"],
             "representative_distance_nm": b["representative_distance_nm"],

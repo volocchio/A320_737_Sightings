@@ -50,12 +50,17 @@ SIM_STATUS_PATHS = [
 ]
 
 
-def _load_sim_result_index() -> dict[tuple[str, str], dict]:
+def _load_sim_result_index() -> dict[tuple[str, str, str], dict]:
     rows = _load_sim_result_rows()
-    return {
-        (str(r.get("distance_bin") or ""), str(r.get("altitude_bin") or "")): r
-        for r in rows
-    }
+    out: dict[tuple[str, str, str], dict] = {}
+    for r in rows:
+        region = str(r.get("region") or "NA")
+        dist = str(r.get("distance_bin") or "")
+        alt = str(r.get("altitude_bin") or "")
+        out[(region, dist, alt)] = r
+        # Backward compatibility for older workup files that did not carry region.
+        out.setdefault(("NA", dist, alt), r)
+    return out
 
 
 def _load_sim_result_rows() -> list[dict]:
@@ -422,13 +427,7 @@ def _mission_bins_summary_charts(points: list[dict]) -> str:
     points = [p for p in points if p.get("distance_nm") and p.get("savings_pct") is not None]
     if not points:
         return ""
-    return (
-        _mission_bins_stage_bar_chart(points)
-        + '<details style="margin-top:12px;"><summary style="cursor:pointer;color:#94a3b8;font-size:12px;font-weight:700;">Alternate chart views</summary>'
-        + _mission_bins_bubble_chart(points)
-        + _mission_bins_weighted_line_chart(points)
-        + '</details>'
-    )
+    return _mission_bins_stage_bar_chart(points)
 
 
 def _sim_rows_to_chart_points(rows: list[dict]) -> list[dict]:
@@ -530,7 +529,7 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
         except Exception:
             return 99999
     stages = sorted(stage_rows, key=stage_order)
-    regions = [r for r in ("NA", "EU_UK") if any(r in stage_rows[s] for s in stages)]
+    regions = ["EU_UK", "NA"]
     if not stages:
         return ""
     width, height = 920, 300
@@ -558,10 +557,11 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
     for i, stage in enumerate(stages):
         group_x = ml + i * (group_w + bar_gap)
         for j, reg in enumerate(regions):
+            x = group_x + j * (bar_w + inner_gap)
             if reg not in stage_rows[stage]:
+                parts.append(f'<rect x="{x:.1f}" y="{height-mb-2:.1f}" width="{bar_w:.1f}" height="2" rx="2" fill="#334155"><title>{html.escape(stage)} {region_labels.get(reg, reg)}: no workup data yet</title></rect>')
                 continue
             avg, flights, alts = stage_rows[stage][reg]
-            x = group_x + j * (bar_w + inner_gap)
             y = sy(avg)
             h = height - mb - y
             color = region_colors.get(reg, "#a78bfa") if avg >= 0 else "#ef4444"

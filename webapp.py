@@ -554,8 +554,9 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
     parts = [
         '<div style="margin-top:18px;border-top:1px solid #334155;padding-top:14px;">',
         '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Fuel savings by representative stage length — NA vs EU/UK</div>',
-        '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Horizontal axis = stage length / distance. Green = EU/UK, orange = North America.</div>',
-        f'<svg width="100%" viewBox="0 0 {width} {height}" role="img" aria-label="Weighted savings by stage length">',
+        '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Horizontal axis = stage length / distance. Green = EU/UK, orange = North America. Scroll sideways on mobile.</div>',
+        '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;">',
+        f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" style="min-width:{width}px;display:block;" role="img" aria-label="Weighted savings by stage length">',
         f'<rect x="0" y="0" width="{width}" height="{height}" rx="12" fill="#0f172a"/>',
     ]
     for i in range(5):
@@ -591,7 +592,7 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
     parts.append(f'<rect x="{lx+86}" y="18" width="12" height="12" rx="2" fill="#f97316"/><text x="{lx+104}" y="29" fill="#cbd5e1" font-size="12">NA</text>')
     parts.append(f'<text x="{width/2:.0f}" y="{height-8}" text-anchor="middle" fill="#94a3b8" font-size="12">Stage length / distance bin (nm)</text>')
     parts.append(f'<text x="14" y="{height/2:.0f}" transform="rotate(-90 14 {height/2:.0f})" text-anchor="middle" fill="#94a3b8" font-size="12">Weighted fuel saved (%)</text>')
-    parts.append('</svg></div>')
+    parts.append('</svg></div></div>')
     return ''.join(parts)
 
 

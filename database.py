@@ -3059,6 +3059,7 @@ def get_airline_mission_bins(region: str | None = "NA", family: str | None = "A3
     rows_sql = f"""
         SELECT distance_nm,
                COALESCE(sustained_top_alt_ft, top_altitude_ft, initial_cruise_alt_ft) AS alt_ft,
+               region,
                origin_icao, dest_icao, tail_number, operator, arrived_utc
         FROM v_sightings_dedup
         WHERE distance_nm IS NOT NULL AND distance_nm > 0{region_sql}{family_sql}

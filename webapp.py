@@ -389,8 +389,7 @@ def _mission_bins_html(bins: list[dict], region: str = "NA") -> str:
         key = (region, str(b.get("distance_bin") or ""), str(b.get("altitude_bin") or ""))
         sim = sim_index.get(key)
         if sim and sim.get("fuel_saved_pct_avg") is not None:
-            raw_delta = float(sim.get("fuel_saved_pct_avg") or 0)
-            savings = -raw_delta
+            savings = float(sim.get("fuel_saved_pct_avg") or 0)
             color = "#22c55e" if savings >= 0 else "#ef4444"
             route = f'{html.escape(sim.get("sim_dep_icao") or "")}→{html.escape(sim.get("sim_arr_icao") or "")}'
             chart_points.append({
@@ -435,14 +434,14 @@ def _sim_rows_to_chart_points(rows: list[dict]) -> list[dict]:
     for r in rows:
         if r.get("fuel_saved_pct_avg") is None:
             continue
-        raw_delta = float(r.get("fuel_saved_pct_avg") or 0)
+        savings = float(r.get("fuel_saved_pct_avg") or 0)
         rep = r.get("representative_flight") or {}
         route = f'{html.escape(r.get("sim_dep_icao") or rep.get("origin_icao") or "")}→{html.escape(r.get("sim_arr_icao") or rep.get("dest_icao") or "")}'
         pts.append({
             "region": str(r.get("region") or "NA"),
             "distance_nm": float(r.get("representative_distance_nm") or r.get("avg_distance_nm") or 0),
             "distance_bin": str(r.get("distance_bin") or ""),
-            "savings_pct": -raw_delta,
+            "savings_pct": savings,
             "altitude_bin": str(r.get("altitude_bin") or ""),
             "flights": int(r.get("count") or 0),
             "route": route,

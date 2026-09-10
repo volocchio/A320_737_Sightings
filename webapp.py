@@ -3402,7 +3402,7 @@ bar('typeChart', typeLabels, typeCounts, 'Flights', '#60a5fa');
 bar('operatorChart', opLabels, opCounts, 'Flights', '#22c55e');
 bar('airportChart', airportLabels, airportCounts, 'Arrivals', '#f59e0b');
 bar('distanceChart', distLabels, distCounts, 'Flights', '#a78bfa');
-const bel=document.getElementById('blockChart'); if(bel && typeof Chart!=='undefined') new Chart(bel, {{type:'scatter', data:{{datasets:[{{label:'Flights', data:blockScatter, pointRadius:3, pointBackgroundColor:'#38bdf8'}}]}}, options:{{...chartOpts, parsing:false, scales:{{x:{{title:{{display:true,text:'Distance (nm)',color:'#cbd5e1'}},ticks:{{color:'#94a3b8'}},grid:{{color:'#334155'}}}},y:{{title:{{display:true,text:'Block speed (kt)',color:'#cbd5e1'}},ticks:{{color:'#94a3b8'}},grid:{{color:'#334155'}}}}}}}} }});
+const bel=document.getElementById('blockChart'); if(bel && typeof Chart!=='undefined') new Chart(bel, {{type:'scatter', data:{{datasets:[{{label:'Flights', data:blockScatter, pointRadius:3, pointBackgroundColor:'#38bdf8'}}]}}, options:{{...chartOpts, parsing:false, scales:{{x:{{title:{{display:true,text:'Distance (nm)',color:'#cbd5e1'}},suggestedMax:2000,ticks:{{color:'#94a3b8',stepSize:200}},grid:{{color:'#334155'}}}},y:{{title:{{display:true,text:'Block speed (kt)',color:'#cbd5e1'}},ticks:{{color:'#94a3b8'}},grid:{{color:'#334155'}}}}}}}} }});
 
 const routeAirports = {route_airports_js};
 const routeRoutes = {route_routes_js};

@@ -58,6 +58,15 @@ def normalize_family(family: str | None) -> str | None:
     return None
 
 
+def _sample_evenly(items: list, max_items: int) -> list:
+    if max_items <= 0 or len(items) <= max_items:
+        return items
+    if max_items == 1:
+        return [items[0]]
+    step = (len(items) - 1) / (max_items - 1)
+    return [items[round(i * step)] for i in range(max_items)]
+
+
 def family_where_clause(family: str | None, alias: str = "") -> tuple[str, tuple]:
     fam = normalize_family(family)
     if not fam:
@@ -2634,7 +2643,12 @@ def get_airline_insights(region: str = "NA", limit: int = 15, family: str | None
         "avg_distance": round(avg_distance) if avg_distance else None,
         "top_types": top_types, "top_operators": top_operators, "top_airports": top_airports,
         "top_routes": top_routes, "longest": longest,
-        "dist_hist_labels": dist_labels, "dist_hist": dist_hist, "block_scatter": scatter[:500],
+        # Keep the block-speed scatter light, but sample across the full
+        # distance range. A raw scatter[:500] biased toward short/early rows
+        # can make the x-axis appear to stop around 800 nm even when longer
+        # flights exist in the dataset.
+        "dist_hist_labels": dist_labels, "dist_hist": dist_hist,
+        "block_scatter": _sample_evenly(sorted(scatter, key=lambda p: p["x"]), 1200),
         "fl_hist_labels": fl_labels, "fl_hist": fl_hist, "avg_fl": avg_fl, "median_fl": med_fl,
     }
 

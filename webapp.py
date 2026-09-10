@@ -531,48 +531,59 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
     regions = ["EU_UK", "NA"]
     if not stages:
         return ""
-    width, height = 920, 300
-    ml, mr, mt, mb = 58, 24, 34, 62
-    max_y = max(1, max(v[0] for rs in stage_rows.values() for v in rs.values())) * 1.18
-    bar_gap = 16
-    group_w = max(48, (width - ml - mr - bar_gap * (len(stages) - 1)) / max(1, len(stages)))
-    inner_gap = 5
-    bar_w = max(14, (group_w - inner_gap * max(0, len(regions) - 1)) / max(1, len(regions)))
-    def sy(y: float) -> float:
-        return height - mb - (max(0, y) / max_y) * (height - mt - mb)
+
+    # Horizontal bars read much better on phones than six cramped vertical groups.
+    width = 920
+    row_h = 48
+    height = 118 + row_h * len(stages)
+    ml, mr, mt, mb = 142, 72, 56, 42
+    vals = [abs(v[0]) for rs in stage_rows.values() for v in rs.values()]
+    max_x = max(1.0, max(vals or [1.0])) * 1.20
+    plot_w = width - ml - mr
+    def sx(v: float) -> float:
+        return ml + (max(0.0, v) / max_x) * plot_w
+    region_colors = {"NA": "#f97316", "EU_UK": "#22c55e"}
+    region_labels = {"NA": "NA", "EU_UK": "EU/UK"}
     parts = [
         '<div style="margin-top:18px;border-top:1px solid #334155;padding-top:14px;">',
         '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Fuel savings by representative stage-length bin — NA vs EU/UK</div>',
-        '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">Primary view: side-by-side region bars; altitude bands combined using flight-count weighting.</div>',
+        '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Horizontal paired bars: green = EU/UK, orange = North America. Altitude bands are flight-count weighted inside each stage-length bin.</div>',
         f'<svg width="100%" viewBox="0 0 {width} {height}" role="img" aria-label="Weighted savings by stage length">',
-        f'<rect x="0" y="0" width="{width}" height="{height}" rx="10" fill="#0f172a"/>',
+        f'<rect x="0" y="0" width="{width}" height="{height}" rx="12" fill="#0f172a"/>',
     ]
+    # x-axis grid and labels
     for i in range(5):
-        y = max_y * i / 4
-        parts.append(f'<line x1="{ml}" y1="{sy(y):.1f}" x2="{width-mr}" y2="{sy(y):.1f}" stroke="#1e293b"/>')
-        parts.append(f'<text x="{ml-8}" y="{sy(y)+4:.1f}" text-anchor="end" fill="#94a3b8" font-size="11">{y:.1f}%</text>')
-    region_colors = {"NA": "#f97316", "EU_UK": "#22c55e"}
-    region_labels = {"NA": "NA", "EU_UK": "EU/UK"}
+        v = max_x * i / 4
+        x = sx(v)
+        parts.append(f'<line x1="{x:.1f}" y1="{mt-12}" x2="{x:.1f}" y2="{height-mb}" stroke="#1e293b"/>')
+        parts.append(f'<text x="{x:.1f}" y="{height-16}" text-anchor="middle" fill="#94a3b8" font-size="12">{v:.1f}%</text>')
+    parts.append(f'<line x1="{ml}" y1="{mt-12}" x2="{ml}" y2="{height-mb}" stroke="#475569"/>')
+    parts.append(f'<line x1="{ml}" y1="{height-mb}" x2="{width-mr}" y2="{height-mb}" stroke="#475569"/>')
+
+    bar_h = 14
     for i, stage in enumerate(stages):
-        group_x = ml + i * (group_w + bar_gap)
+        y0 = mt + i * row_h
+        parts.append(f'<text x="{ml-12}" y="{y0+23}" text-anchor="end" fill="#cbd5e1" font-size="13" font-weight="700">{html.escape(stage)}</text>')
+        parts.append(f'<line x1="{ml}" y1="{y0+40}" x2="{width-mr}" y2="{y0+40}" stroke="#172033"/>')
         for j, reg in enumerate(regions):
-            x = group_x + j * (bar_w + inner_gap)
+            y = y0 + 5 + j * 19
+            label = region_labels.get(reg, reg)
+            color = region_colors.get(reg, "#a78bfa")
             if reg not in stage_rows[stage]:
-                parts.append(f'<rect x="{x:.1f}" y="{height-mb-2:.1f}" width="{bar_w:.1f}" height="2" rx="2" fill="#334155"><title>{html.escape(stage)} {region_labels.get(reg, reg)}: no workup data yet</title></rect>')
+                parts.append(f'<text x="{ml+4}" y="{y+11}" fill="#64748b" font-size="11">{label}: no data</text>')
                 continue
             avg, flights, alts = stage_rows[stage][reg]
-            y = sy(avg)
-            h = height - mb - y
-            color = region_colors.get(reg, "#a78bfa") if avg >= 0 else "#ef4444"
-            title = html.escape(f'{stage} {region_labels.get(reg, reg)}: {avg:.2f}% saved, {flights:,} flights, altitude bands: {", ".join(alts)}')
-            parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" rx="5" fill="{color}"><title>{title}</title></rect>')
-            parts.append(f'<text x="{x+bar_w/2:.1f}" y="{y-6:.1f}" text-anchor="middle" fill="#e2e8f0" font-size="10">{avg:.1f}</text>')
-        parts.append(f'<text x="{group_x+group_w/2:.1f}" y="{height-mb+18}" text-anchor="middle" fill="#94a3b8" font-size="10">{html.escape(stage)}</text>')
-    lx = width - 150
-    for j, reg in enumerate(regions):
-        color = region_colors.get(reg, "#a78bfa")
-        parts.append(f'<rect x="{lx}" y="{18+j*18}" width="10" height="10" rx="2" fill="{color}"/><text x="{lx+16}" y="{27+j*18}" fill="#cbd5e1" font-size="11">{region_labels.get(reg, reg)}</text>')
-    parts.append(f'<text x="14" y="{height/2:.0f}" transform="rotate(-90 14 {height/2:.0f})" text-anchor="middle" fill="#94a3b8" font-size="12">Weighted fuel saved (%)</text>')
+            shown = max(0.0, avg)
+            x2 = sx(shown)
+            w = max(2.0, x2 - ml) if shown > 0 else 2.0
+            title = html.escape(f'{stage} {label}: {avg:.2f}% saved, {flights:,} flights, altitude bands: {", ".join(alts)}')
+            parts.append(f'<rect x="{ml}" y="{y}" width="{w:.1f}" height="{bar_h}" rx="4" fill="{color}"><title>{title}</title></rect>')
+            txt_x = min(width - mr - 6, ml + w + 8)
+            parts.append(f'<text x="{txt_x:.1f}" y="{y+11}" fill="#e2e8f0" font-size="12" font-weight="700">{label} {avg:.1f}%</text>')
+    lx = width - 190
+    parts.append(f'<rect x="{lx}" y="18" width="12" height="12" rx="2" fill="#22c55e"/><text x="{lx+18}" y="29" fill="#cbd5e1" font-size="12">EU/UK</text>')
+    parts.append(f'<rect x="{lx+86}" y="18" width="12" height="12" rx="2" fill="#f97316"/><text x="{lx+104}" y="29" fill="#cbd5e1" font-size="12">NA</text>')
+    parts.append(f'<text x="{(ml+width-mr)/2:.0f}" y="{height-2}" text-anchor="middle" fill="#94a3b8" font-size="12">Weighted fuel saved (%)</text>')
     parts.append('</svg></div>')
     return ''.join(parts)
 

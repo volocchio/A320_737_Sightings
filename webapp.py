@@ -5231,7 +5231,7 @@ function distColorsFor(labels) {{
           tooltip: {{callbacks:{{label:(ctx)=>`${{ctx.dataset.label}}: ${{ctx.parsed.y}} kts @ ${{ctx.parsed.x}} ${{xLabel.includes('hour')?'hr':'nm'}}`}}}}
         }},
         scales: {{
-          x: {{type:'linear', grid:{{color:'#1e3a5f'}}, title: axisTitle(xLabel)}},
+          x: {{type:'linear', grid:{{color:'#1e3a5f'}}, title: axisTitle(xLabel), suggestedMax: axis === 'd' ? 2000 : undefined, ticks: axis === 'd' ? {{ stepSize: 200 }} : undefined}},
           y: {{grid:{{color:'#1e3a5f'}}, title: axisTitle('Block speed (kts)')}},
         }},
       }},

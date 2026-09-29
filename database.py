@@ -3113,11 +3113,20 @@ def get_airline_mission_bins(region: str | None = "NA", family: str | None = "A3
         # Pick the real flight closest to the bin representative distance+altitude.
         # This gives the simulator an actual airport pair instead of a synthetic leg.
         err = abs(dist - d_bin[3]) + abs((alt - a_bin[3]) / 1000.0) * 25.0
-        if r.get("origin_icao") and r.get("dest_icao") and err < b.get("representative_error", 10**9):
+        origin = str(r.get("origin_icao") or "").upper()
+        dest = str(r.get("dest_icao") or "").upper()
+        sim_unsupported_icao = {"LERJ"}
+        sim_route_ok = (
+            len(origin) == 4 and origin.isalpha()
+            and len(dest) == 4 and dest.isalpha()
+            and origin not in sim_unsupported_icao
+            and dest not in sim_unsupported_icao
+        )
+        if sim_route_ok and err < b.get("representative_error", 10**9):
             b["representative_error"] = err
             b["representative_flight"] = {
-                "origin_icao": r.get("origin_icao"),
-                "dest_icao": r.get("dest_icao"),
+                "origin_icao": origin,
+                "dest_icao": dest,
                 "tail_number": r.get("tail_number"),
                 "operator": r.get("operator"),
                 "distance_nm": round(dist),

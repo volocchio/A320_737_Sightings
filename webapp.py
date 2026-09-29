@@ -388,24 +388,31 @@ def _mission_bins_html(bins: list[dict], region: str = "NA") -> str:
     for b in bins[:10]:
         key = (region, str(b.get("distance_bin") or ""), str(b.get("altitude_bin") or ""))
         sim = sim_index.get(key)
-        if sim and sim.get("fuel_saved_pct_avg") is not None:
-            savings = float(sim.get("fuel_saved_pct_avg") or 0)
-            color = "#22c55e" if savings >= 0 else "#ef4444"
+        if sim:
             route = f'{html.escape(sim.get("sim_dep_icao") or "")}→{html.escape(sim.get("sim_arr_icao") or "")}'
-            chart_points.append({
-                "distance_nm": float(sim.get("representative_distance_nm") or b.get("avg_distance_nm") or 0),
-                "distance_bin": str(sim.get("distance_bin") or b.get("distance_bin") or ""),
-                "savings_pct": savings,
-                "altitude_bin": str(sim.get("altitude_bin") or b.get("altitude_bin") or ""),
-                "flights": int(b.get("count") or 0),
-                "route": route,
-            })
             route_line = f'<div style="color:#94a3b8;font-size:11px;">Rep route: {route}; 70/85/95% MTOW</div>'
-            status = (
-                f'<span style="color:{color};font-weight:800;">{savings:+.2f}% saved</span>'
-                f'{route_line}'
-                f'<div style="color:#f59e0b;font-size:11px;">Calibration pending</div>'
-            )
+            if sim.get("fuel_saved_pct_avg") is not None:
+                savings = float(sim.get("fuel_saved_pct_avg") or 0)
+                color = "#22c55e" if savings >= 0 else "#ef4444"
+                chart_points.append({
+                    "distance_nm": float(sim.get("representative_distance_nm") or b.get("avg_distance_nm") or 0),
+                    "distance_bin": str(sim.get("distance_bin") or b.get("distance_bin") or ""),
+                    "savings_pct": savings,
+                    "altitude_bin": str(sim.get("altitude_bin") or b.get("altitude_bin") or ""),
+                    "flights": int(b.get("count") or 0),
+                    "route": route,
+                })
+                status = (
+                    f'<span style="color:{color};font-weight:800;">{savings:+.2f}% saved</span>'
+                    f'{route_line}'
+                    f'<div style="color:#f59e0b;font-size:11px;">Calibration pending</div>'
+                )
+            else:
+                status = (
+                    '<span style="color:#ef4444;font-weight:800;">Sim attempted — no valid result</span>'
+                    f'{route_line}'
+                    '<div style="color:#94a3b8;font-size:11px;">Needs alternate representative route or model-data fix</div>'
+                )
         else:
             status = '<span style="color:#f59e0b;font-weight:700;">Awaiting sim run</span>'
         rows.append(

@@ -52,7 +52,8 @@ def _page_cache_get(key: str) -> str | None:
     if not item:
         return None
     ts, html_text = item
-    if (_time.time() - ts) > _PAGE_CACHE_TTL_SEC:
+    ttl = 300.0 if key.startswith("airline_insights:") else _PAGE_CACHE_TTL_SEC
+    if (_time.time() - ts) > ttl:
         _PAGE_CACHE.pop(key, None)
         return None
     return html_text
@@ -3374,13 +3375,19 @@ def _fleet_penetration_html() -> str:
 
 def _airline_insights_html(region: str, title: str, back_href: str, back_label: str) -> str:
     """Render A320/737 operational insights. No CJ/ATLAS/WAT logic."""
+    cache_key = f"airline_insights:{region}:{request.full_path}"
+    cached = _page_cache_get(cache_key)
+    if cached is not None:
+        return cached
     family = _normalize_family(request.args.get("family"))
     data = database.get_airline_insights(region=region, limit=15, family=family)
     compare_region = "EU_UK" if region == "NA" else "NA"
     compare = database.get_airline_insights(region=compare_region, limit=5, family=family)
     stats = database.get_period_stats(region=region, family=family)
-    mission_bins = database.get_airline_mission_bins(region=region, family=family)
-    mission_bins_html = _mission_bins_html(mission_bins, region=region)
+    # Mission bins are expensive and already shown/exported from the main
+    # dashboard pages. Keep Insights focused on analytical rollups so clicking
+    # EU/NA Insights does not look dead on first render.
+    mission_bins_html = ""
     route_map = database.get_route_map_data(top_n=80, region=region, family=family)
     route_airports_js = _json.dumps(route_map.get("airports", []))
     route_routes_js = _json.dumps(route_map.get("routes", []))
@@ -3437,6 +3444,8 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
     )
     export_region = region
     export_family = family or "ALL"
+    nav_suffix = _family_query_suffix(family)
+    back_href_q = back_href + nav_suffix
     export_links = (
         f'<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">'
         f'<a href="/export/mission-bins.csv?region={export_region}&family={export_family}" style="display:inline-block;background:#0f172a;color:#93c5fd;border:1px solid #334155;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:700;">↓ Mission bins CSV</a>'
@@ -3444,7 +3453,7 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
         f'</div>'
     )
 
-    return f"""<!DOCTYPE html>
+    html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title} — A320/737 Sightings</title><meta http-equiv="refresh" content="120">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
@@ -3455,10 +3464,9 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
 .stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}} .stat,.card{{background:#1e293b;border-radius:8px;padding:16px}} .label{{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px}} .value{{font-size:26px;font-weight:800;color:#60a5fa}}
 .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-bottom:18px}} #routeMap{{height:420px;border-radius:8px;border:1px solid #334155;margin-bottom:18px;background:#020617}} .chartbox{{height:320px}} h2{{font-size:15px;margin-bottom:10px}} table{{width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden}} th{{background:#334155;color:#94a3b8;font-size:11px;text-transform:uppercase;text-align:left;padding:9px}} td{{padding:9px;border-bottom:1px solid #334155;font-size:13px}} tr:hover{{background:#243244}}
 </style></head><body>
-<div class="nav"><a href="{back_href}">← {back_label}</a> &nbsp;·&nbsp; <a href="/">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights">NA Insights</a> &nbsp;·&nbsp; <a href="/eu">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights">EU Insights</a></div>
+<div class="nav"><a href="{back_href_q}">← {back_label}</a> &nbsp;·&nbsp; <a href="/{nav_suffix}">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights{nav_suffix}">NA Insights</a> &nbsp;·&nbsp; <a href="/eu{nav_suffix}">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights{nav_suffix}">EU Insights</a></div>
 <h1>{title}</h1><div class="sub">{fam_label} operational patterns · region: <strong>{region}</strong> · auto-refreshes every 2 min</div>{fam_filter}
 <div class="card" style="margin-bottom:18px;border-left:4px solid #22c55e;"><h2>Tamarack Mission-Benefit Setup</h2><div style="color:#cbd5e1;line-height:1.45;">{mission_note}</div>{export_links}</div>
-{mission_bins_html}
 <div class="stats"><div class="stat"><div class="label">Last 24h</div><div class="value">{stats['today']}</div></div><div class="stat"><div class="label">Last 7 days</div><div class="value">{stats['week']}</div></div><div class="stat"><div class="label">All Time</div><div class="value">{data['total']}</div></div><div class="stat"><div class="label">Active Tails</div><div class="value">{data['active_tails']}</div></div><div class="stat"><div class="label">Avg Distance</div><div class="value">{avg}</div></div><div class="stat"><div class="label">Avg Flight Level</div><div class="value">{avg_fl}</div></div><div class="stat"><div class="label">Median Flight Level</div><div class="value">{med_fl}</div></div></div><div class="card" style="margin-bottom:18px;"><h2>NA vs EU altitude context</h2><div style="color:#cbd5e1;line-height:1.45;">Current page: <strong>{region}</strong> avg cruise/top altitude <strong>{avg_fl}</strong>, avg distance <strong>{avg}</strong>. Comparison region <strong>{compare_region}</strong>: avg cruise/top altitude <strong>{cmp_avg_fl}</strong>, avg distance <strong>{cmp_avg_dist}</strong>. EU short-haul flights often cruise lower because of airspace/ATC constraints; treat low FL as operational environment unless distance and route suggest otherwise.</div></div>
 <div class="grid"><div class="card chartbox"><h2>Flight Level Distribution</h2><canvas id="flChart"></canvas></div><div class="card chartbox"><h2>Aircraft Mix</h2><canvas id="typeChart"></canvas></div><div class="card chartbox"><h2>Top Operators</h2><canvas id="operatorChart"></canvas></div><div class="card chartbox"><h2>Arrival Airports</h2><canvas id="airportChart"></canvas></div><div class="card chartbox"><h2>Distance Distribution</h2><canvas id="distanceChart"></canvas></div><div class="card chartbox" style="grid-column:1/-1;"><h2>Block Speed vs Distance</h2><canvas id="blockChart"></canvas></div></div><h2>Route Map</h2><div id="routeMap"></div><div class="grid"><div class="card"><h2>Top Aircraft Variants</h2><table><thead><tr><th>Variant</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_types'])}</tbody></table></div><div class="card"><h2>Top Operators</h2><table><thead><tr><th>Operator</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_operators'])}</tbody></table></div><div class="card"><h2>Top Arrival Airports</h2><table><thead><tr><th>Airport</th><th style="text-align:right;">Arrivals</th><th></th></tr></thead><tbody>{simple_rows(data['top_airports'])}</tbody></table></div><div class="card"><h2>Top Routes</h2><table><thead><tr><th>Route</th><th style="text-align:right;">Flights</th><th>Avg Distance</th></tr></thead><tbody>{route_rows}</tbody></table></div></div>
 <h2>Longest Observed Flights</h2><table><thead><tr><th>Tail</th><th>Type</th><th>Route</th><th style="text-align:right;">Distance</th><th>Operator</th><th>Arrived</th></tr></thead><tbody>{longest_html}</tbody></table>
@@ -3500,6 +3508,7 @@ const routeRoutes = {route_routes_js};
 </script>
 {_chat_widget_html()}
 </body></html>"""
+    return _page_cache_set(cache_key, html)
 
 
 @app.get("/")

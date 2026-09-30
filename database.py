@@ -95,6 +95,56 @@ def family_where_clause(family: str | None, alias: str = "") -> tuple[str, tuple
     return f" AND UPPER(COALESCE({col}, '')) IN ({placeholders})", tuple(types)
 
 
+DEDUP_CACHE_SQL = """
+    SELECT * FROM (
+      SELECT s.*,
+             ROW_NUMBER() OVER (
+               PARTITION BY UPPER(COALESCE(NULLIF(tail_number, ''), 'id_' || id)),
+                            UPPER(IFNULL(origin_icao, '')),
+                            UPPER(IFNULL(dest_icao,   '')),
+                            DATE(arrived_utc)
+               ORDER BY
+                 CASE source
+                   WHEN 'flightaware'  THEN 1
+                   WHEN 'adsbexchange' THEN 2
+                   WHEN 'opensky'      THEN 3
+                   ELSE 4
+                 END,
+                 id DESC
+             ) AS _rn
+      FROM sightings s
+      WHERE (s.scope_tier IS NULL OR s.scope_tier IN ('atlas', 'tracked'))
+    )
+    WHERE _rn = 1
+"""
+
+
+def _ensure_dedup_cache() -> None:
+    """Create/materialize the canonical dedup cache used by dashboard queries."""
+    with _connect() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sightings_dedup_cache'"
+        ).fetchone()
+        if not exists:
+            conn.execute(f"CREATE TABLE sightings_dedup_cache AS {DEDUP_CACHE_SQL}")
+        else:
+            # Keep the table and compatibility view in place while refreshing;
+            # dropping either one races live requests and causes intermittent 500s.
+            conn.execute("DELETE FROM sightings_dedup_cache")
+            conn.execute(f"INSERT INTO sightings_dedup_cache {DEDUP_CACHE_SQL}")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_dedup_cache_arrived ON sightings_dedup_cache(arrived_utc)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_dedup_cache_region_arrived ON sightings_dedup_cache(region, arrived_utc)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_dedup_cache_region_id ON sightings_dedup_cache(region, id DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_dedup_cache_type_region ON sightings_dedup_cache(ac_type, region, id DESC)")
+        conn.execute("CREATE VIEW IF NOT EXISTS v_sightings_dedup AS SELECT * FROM sightings_dedup_cache")
+        conn.commit()
+
+
+def refresh_dedup_cache() -> None:
+    """Refresh materialized dedup cache after polling/backfills."""
+    _ensure_dedup_cache()
+
+
 def init_db() -> None:
     """Create tables if they don't exist."""
     with _connect() as conn:
@@ -248,7 +298,7 @@ def init_db() -> None:
         )
         conn.commit()
 
-    # ── Deduplication view ─────────────────────────────────────────────────
+    # ── Deduplication cache/view ───────────────────────────────────────────
     # Same flight reported by multiple sources (FlightAware + ADSB Exchange +
     # OpenSky) shouldn't show up as multiple rows on the dashboard. Group by
     # (tail, origin, dest, date) and keep the most-enriched source.
@@ -256,31 +306,17 @@ def init_db() -> None:
     # A320/737 clone it includes generic 'tracked' rows as well as legacy
     # 'atlas' rows, while still excluding adjacent/up-purchase rows. NULL
     # scope_tier is treated as 'atlas' for backwards compatibility.
+    # The raw window-function view became too slow once history grew past
+    # ~200k rows. Materialize the canonical dedup set into a cache table and
+    # expose it behind the old view name so existing queries stay unchanged.
+    _ensure_dedup_cache()
+
     # Always DROP + CREATE so the definition can evolve.
     with _connect() as conn:
         conn.execute("DROP VIEW IF EXISTS v_sightings_dedup")
         conn.execute("""
             CREATE VIEW v_sightings_dedup AS
-            SELECT * FROM (
-              SELECT s.*,
-                     ROW_NUMBER() OVER (
-                       PARTITION BY UPPER(COALESCE(NULLIF(tail_number, ''), 'id_' || id)),
-                                    UPPER(IFNULL(origin_icao, '')),
-                                    UPPER(IFNULL(dest_icao,   '')),
-                                    DATE(arrived_utc)
-                       ORDER BY
-                         CASE source
-                           WHEN 'flightaware'  THEN 1
-                           WHEN 'adsbexchange' THEN 2
-                           WHEN 'opensky'      THEN 3
-                           ELSE 4
-                         END,
-                         id DESC
-                     ) AS _rn
-              FROM sightings s
-              WHERE (s.scope_tier IS NULL OR s.scope_tier IN ('atlas', 'tracked'))
-            )
-            WHERE _rn = 1
+            SELECT * FROM sightings_dedup_cache
         """)
         # Companion view: same dedup logic, no scope filter. Used by pages that
         # need to see adjacent-tier rows (Mustang activity, tail dossier for a

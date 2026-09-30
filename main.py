@@ -146,6 +146,14 @@ def _poll() -> None:
         )
         new_count += 1
 
+    if new_count:
+        try:
+            t0 = time.time()
+            database.refresh_dedup_cache()
+            log.info("Dedup cache refreshed in %.1fs", time.time() - t0)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Dedup cache refresh failed: %s", exc)
+
     now = datetime.now(timezone.utc).isoformat()
     _update_state(
         last_poll_utc=now,
@@ -617,6 +625,29 @@ def main() -> None:
     # Thread 2 — watchdog
     t_watch = threading.Thread(target=_run_watchdog, daemon=True, name="watchdog")
     t_watch.start()
+
+    # Warm expensive dashboard/insights caches after startup. The first render
+    # of insights can take ~60s because it scans the dedup view; doing it in a
+    # background thread prevents the first human click from looking dead.
+    def _warm_dashboard_cache():
+        time.sleep(5)
+        paths = [
+            "/?family=A320CEO",
+            "/eu?family=A320CEO",
+            "/insights?family=A320CEO",
+            "/eu-insights?family=A320CEO",
+            "/insights?family=A320NEO",
+            "/eu-insights?family=A320NEO",
+        ]
+        try:
+            with flask_app.test_client() as client:
+                for path in paths:
+                    t0 = time.time()
+                    resp = client.get(path)
+                    log.info("Cache warm %s -> %s in %.1fs", path, resp.status_code, time.time() - t0)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Dashboard cache warm failed: %s", exc)
+    threading.Thread(target=_warm_dashboard_cache, daemon=True, name="dashboard-cache-warm").start()
 
     # Thread 3 — Flask dashboard on port 8737
     log.info("Dashboard running at http://0.0.0.0:8737")

@@ -49,17 +49,25 @@ def resolve_tracking_url(
         return _flightaware_tracking_url(flight_id, tail_number) or (tracking_url or "")
     return tracking_url or ""
 
-A320_FAMILY_TYPES = {"A318", "A319", "A320", "A321", "A19N", "A20N", "A21N"}
+A320_CEO_TYPES = {"A318", "A319", "A320", "A321"}
+A320_NEO_TYPES = {"A19N", "A20N", "A21N"}
+A320_FAMILY_TYPES = A320_CEO_TYPES | A320_NEO_TYPES
 B737_FAMILY_TYPES = {"B736", "B737", "B738", "B739", "B37M", "B38M", "B39M", "B3XM"}
 
 
 def normalize_family(family: str | None) -> str | None:
-    fam = (family or "").strip().upper().replace("-", "")
+    fam = (family or "").strip().upper().replace("-", "").replace("_", "")
+    if not fam or fam in {"A320CEO", "A320CLASSIC", "CEO", "CLASSIC", "AIRBUSCEO"}:
+        return "A320CEO"
+    if fam in {"A320NEO", "NEO", "AIRBUSNEO"}:
+        return "A320NEO"
     if fam in {"A320", "AIRBUS", "AIRBUS320"}:
         return "A320"
     if fam in {"737", "B737", "BOEING", "BOEING737"}:
         return "B737"
-    return None
+    if fam in {"ALL", "ANY", "NARROWBODIES"}:
+        return None
+    return "A320CEO"
 
 
 def _sample_evenly(items: list, max_items: int) -> list:
@@ -76,7 +84,13 @@ def family_where_clause(family: str | None, alias: str = "") -> tuple[str, tuple
     if not fam:
         return "", ()
     col = f"{alias}.ac_type" if alias else "ac_type"
-    types = sorted(A320_FAMILY_TYPES if fam == "A320" else B737_FAMILY_TYPES)
+    types_by_family = {
+        "A320CEO": A320_CEO_TYPES,
+        "A320NEO": A320_NEO_TYPES,
+        "A320": A320_FAMILY_TYPES,
+        "B737": B737_FAMILY_TYPES,
+    }
+    types = sorted(types_by_family[fam])
     placeholders = ",".join("?" for _ in types)
     return f" AND UPPER(COALESCE({col}, '')) IN ({placeholders})", tuple(types)
 

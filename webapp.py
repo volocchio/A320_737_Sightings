@@ -348,46 +348,66 @@ daemon_state: dict = {
 
 DB_PATH = Path(__file__).parent / "sightings.db"
 
-A320_FAMILY_TYPES = {"A318", "A319", "A320", "A321", "A19N", "A20N", "A21N"}
+A320_CEO_TYPES = {"A318", "A319", "A320", "A321"}
+A320_NEO_TYPES = {"A19N", "A20N", "A21N"}
+A320_FAMILY_TYPES = A320_CEO_TYPES | A320_NEO_TYPES
 B737_FAMILY_TYPES = {"B736", "B737", "B738", "B739", "B37M", "B38M", "B39M", "B3XM"}
 
 
 def _normalize_family(family: str | None) -> str | None:
-    fam = (family or "").strip().upper().replace("-", "")
+    fam = (family or "").strip().upper().replace("-", "").replace("_", "")
+    # Default dashboard view: A320 classic/CEO. Use family=ALL for all narrowbodies.
+    if not fam or fam in {"A320CEO", "A320CLASSIC", "CEO", "CLASSIC", "AIRBUSCEO"}:
+        return "A320CEO"
+    if fam in {"A320NEO", "NEO", "AIRBUSNEO"}:
+        return "A320NEO"
     if fam in {"A320", "AIRBUS", "AIRBUS320"}:
         return "A320"
     if fam in {"737", "B737", "BOEING", "BOEING737"}:
         return "B737"
-    return None
+    if fam in {"ALL", "ANY", "NARROWBODIES"}:
+        return None
+    return "A320CEO"
 
 
 def _family_sql(family: str | None) -> tuple[str, tuple]:
     fam = _normalize_family(family)
     if not fam:
         return "", ()
-    types = sorted(A320_FAMILY_TYPES if fam == "A320" else B737_FAMILY_TYPES)
+    types_by_family = {
+        "A320CEO": A320_CEO_TYPES,
+        "A320NEO": A320_NEO_TYPES,
+        "A320": A320_FAMILY_TYPES,
+        "B737": B737_FAMILY_TYPES,
+    }
+    types = sorted(types_by_family[fam])
     return " AND UPPER(COALESCE(ac_type, '')) IN (" + ",".join("?" for _ in types) + ")", tuple(types)
 
 
 def _family_label(family: str | None) -> str:
     fam = _normalize_family(family)
-    return {"A320": "A320 Family", "B737": "Boeing 737 Family"}.get(fam, "All Narrowbodies")
+    return {
+        "A320CEO": "A320 CEO / Classic",
+        "A320NEO": "A320 NEO",
+        "A320": "A320 Family",
+        "B737": "Boeing 737 Family",
+    }.get(fam, "All Narrowbodies")
 
 
 def _family_query_suffix(family: str | None) -> str:
     fam = _normalize_family(family)
-    return f"?family={fam}" if fam else ""
+    return f"?family={fam}" if fam else "?family=ALL"
 
 
 def _family_filter_html(active: str | None, base_path: str) -> str:
     fam = _normalize_family(active)
     def pill(label: str, value: str | None) -> str:
         is_active = fam == value or (fam is None and value is None)
-        href = base_path + (f"?family={value}" if value else "")
+        href = base_path + (f"?family={value}" if value else "?family=ALL")
         bg = "#2563eb" if is_active else "#1e293b"
         border = "#60a5fa" if is_active else "#334155"
         return f'<a href="{href}" style="display:inline-block;background:{bg};border:1px solid {border};color:#fff;padding:7px 12px;border-radius:999px;font-size:12px;font-weight:700;text-decoration:none;">{label}</a>'
-    return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px;align-items:center;"><span style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.8px;">Family</span>' + pill("All", None) + pill("A320 Family", "A320") + pill("737 Family", "B737") + '</div>'
+    return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px;align-items:center;"><span style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.8px;">Type</span>' + pill("A320 CEO", "A320CEO") + pill("A320 NEO", "A320NEO") + pill("A320 All", "A320") + pill("737 Family", "B737") + pill("All", None) + '</div>'
 
 
 def _mission_bins_html(bins: list[dict], region: str = "NA") -> str:

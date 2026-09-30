@@ -4328,8 +4328,13 @@ def airline_dossiers():
             ORDER BY id DESC
         """, (region, *fam_args)).fetchall()]
     by_op: dict[str, dict] = {}
+    unidentified_flights = 0
     for r in raw:
-        label = database._operator_display_label(r.get("operator"))
+        raw_operator = r.get("operator")
+        if database._is_unidentified_operator(raw_operator):
+            unidentified_flights += 1
+            continue
+        label = database._operator_display_label(raw_operator)
         d = by_op.setdefault(label, {"airline": label, "flights": 0, "tails": set(), "routes": {}, "fuel_lb": 0.0, "weighted_pct": 0.0, "simmed": 0})
         d["flights"] += 1
         if r.get("tail_number"): d["tails"].add(r["tail_number"])
@@ -4367,11 +4372,18 @@ def airline_dossiers():
         </div>''')
     nav_suffix = _family_query_suffix(family)
     range_economics_html = _mission_economics_range_bars(region)
+    unknown_note = (
+        f'<div style="background:#2d1e0a;border-left:4px solid #f59e0b;border-radius:8px;padding:10px 12px;color:#fcd34d;margin:0 0 14px;font-size:13px;">'
+        f'Excluded {unidentified_flights:,} unidentified/operator-missing flights from airline prospect cards. They are aggregate data-quality backlog, not a sales target.'
+        f'</div>'
+        if unidentified_flights else ""
+    )
     return f'''<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Airline Dossiers — A320/737 Sightings</title>
     <style>body{{background:#0f172a;color:#e2e8f0;font-family:Arial,sans-serif;padding:24px}}a{{color:#60a5fa;text-decoration:none}} .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px}}</style></head><body>
     <div style="margin-bottom:14px;"><a href="/{nav_suffix}">← Sightings</a> · <a href="/insights{nav_suffix}">Insights</a> · <a href="/eu-insights{nav_suffix}">EU Insights</a></div>
     <h1>Airline Dossiers</h1><div style="color:#94a3b8;margin-bottom:16px;">Airline-facing rollup: observed routes × current simulator distance bins × transparent fuel/cost estimate. Fuel price assumption: ${fuel_price_per_lb:.2f}/lb Jet-A. Calibration caveat stays visible until the A320 config is finalized.</div>
     {_family_filter_html(family, "/airlines")}
+    {unknown_note}
     {range_economics_html}
     <div class="grid">{''.join(cards) or '<div style="color:#94a3b8;">No airline dossier rows for this filter yet.</div>'}</div>
     </body></html>'''

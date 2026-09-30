@@ -138,10 +138,19 @@ AIRLINE_OPERATOR_LABELS = {
 }
 
 
+UNIDENTIFIED_OPERATOR_LABEL = "Unidentified operator"
+UNKNOWN_OPERATOR_CODES = {"", "UNKNOWN", "UNIDENTIFIED", "—", "-", "NONE", "NULL", "N/A"}
+
+
+def _is_unidentified_operator(raw: str | None) -> bool:
+    op = (raw or "").strip().upper()
+    return op in UNKNOWN_OPERATOR_CODES or op == UNIDENTIFIED_OPERATOR_LABEL.upper()
+
+
 def _operator_display_label(raw: str | None) -> str:
     op = (raw or "").strip().upper()
-    if not op or op in {"UNKNOWN", "—", "-", "NONE"}:
-        return "Unidentified operator"
+    if _is_unidentified_operator(op):
+        return UNIDENTIFIED_OPERATOR_LABEL
     return AIRLINE_OPERATOR_LABELS.get(op, op)
 
 

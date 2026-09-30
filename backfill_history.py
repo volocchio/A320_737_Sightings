@@ -22,7 +22,7 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone, timedelta
-from urllib.parse import quote
+from urllib.parse import quote, urlparse, parse_qs
 
 import requests
 
@@ -86,7 +86,11 @@ def _query_one_day(day: datetime) -> list[dict]:
         data    = resp.json()
         flights = data.get("flights", [])
         out.extend(flights)
-        cursor = (data.get("links") or {}).get("next")
+        next_link = (data.get("links") or {}).get("next")
+        if next_link:
+            cursor = parse_qs(urlparse(next_link).query).get("cursor", [None])[0] or next_link
+        else:
+            cursor = None
         if not cursor or not flights:
             break
         time.sleep(THROTTLE_SECONDS)

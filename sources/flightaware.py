@@ -17,7 +17,7 @@ Cost: one call per poll regardless of how many type codes we watch.
 
 import logging
 from datetime import datetime, timezone, timedelta
-from urllib.parse import quote
+from urllib.parse import quote, urlparse, parse_qs
 
 import requests
 
@@ -118,7 +118,11 @@ def fetch_landings(lookback_minutes: int) -> list[Sighting]:
             )
 
         links = data.get("links") or {}
-        cursor = links.get("next")
+        next_link = links.get("next")
+        if next_link:
+            cursor = parse_qs(urlparse(next_link).query).get("cursor", [None])[0] or next_link
+        else:
+            cursor = None
         if not cursor or not flights:
             break
 

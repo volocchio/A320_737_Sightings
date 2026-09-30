@@ -733,6 +733,77 @@ def _mission_bins_weighted_line_chart(points: list[dict]) -> str:
     return ''.join(parts)
 
 
+def _mission_economics_range_bars(region: str | None = None) -> str:
+    """Airline-facing horizontal range-bin economics chart from sim rows."""
+    rows = [r for r in _load_sim_result_rows() if r.get("fuel_saved_pct_avg") is not None]
+    if region:
+        rows = [r for r in rows if str(r.get("region") or "") == region]
+    if not rows:
+        return ""
+    fuel_price_per_gal = 3.35
+    lb_per_gal = 6.7
+    grouped: dict[str, dict] = {}
+    for r in rows:
+        stage = str(r.get("distance_bin") or "—")
+        flights = max(1, int(r.get("count") or 0))
+        scenarios = r.get("weight_scenarios") or []
+        avg_lb = sum(float(x.get("fuel_saved_lb") or 0) for x in scenarios) / max(1, len(scenarios))
+        g = grouped.setdefault(stage, {"flights": 0, "dist": 0.0, "alt": 0.0, "pct": 0.0, "gal": 0.0})
+        g["flights"] += flights
+        g["dist"] += flights * float(r.get("avg_distance_nm") or r.get("representative_distance_nm") or 0)
+        g["alt"] += flights * float(r.get("avg_altitude_ft") or r.get("representative_altitude_ft") or 0)
+        g["pct"] += flights * float(r.get("fuel_saved_pct_avg") or 0)
+        g["gal"] += flights * (avg_lb / lb_per_gal)
+    def stage_order(stage: str) -> int:
+        try:
+            return int(stage.split("–", 1)[0].replace(",", ""))
+        except Exception:
+            return 99999
+    items = []
+    for stage, g in grouped.items():
+        f = max(1, g["flights"])
+        gal = g["gal"]
+        items.append({
+            "stage": stage,
+            "flights": int(g["flights"]),
+            "avg_dist": g["dist"] / f,
+            "avg_alt": g["alt"] / f,
+            "avg_pct": g["pct"] / f,
+            "gal": gal,
+            "usd": gal * fuel_price_per_gal,
+            "order": stage_order(stage),
+        })
+    items.sort(key=lambda x: x["order"])
+    max_usd = max(1.0, max(x["usd"] for x in items))
+    bars = []
+    for x in items:
+        w = max(4.0, 100.0 * x["usd"] / max_usd)
+        bars.append(f'''
+        <div style="display:grid;grid-template-columns:110px 1fr 120px;gap:10px;align-items:center;margin:10px 0;">
+          <div style="font-weight:900;color:#e2e8f0;">{html.escape(x['stage'])}</div>
+          <div>
+            <div style="height:22px;background:#0f172a;border-radius:999px;overflow:hidden;border:1px solid #334155;">
+              <div style="width:{w:.1f}%;height:100%;background:linear-gradient(90deg,#22c55e,#84cc16);border-radius:999px;"></div>
+            </div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:3px;">avg {x['avg_dist']:.0f} nm · avg FL{x['avg_alt']/100:.0f} · {x['flights']:,} observed flights · {x['avg_pct']:.1f}% saved</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-weight:900;color:#fbbf24;">${x['usd']:,.0f}</div>
+            <div style="font-size:11px;color:#94a3b8;">{x['gal']:,.0f} gal saved</div>
+          </div>
+        </div>''')
+    reg_label = {"NA": "North America", "EU_UK": "Europe / UK", "OTHER": "Other"}.get(region or "", "NA + EU/UK")
+    return f'''
+    <section style="background:#1e293b;border:1px solid #334155;border-left:4px solid #22c55e;border-radius:10px;padding:14px 16px;margin:0 0 18px;">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap;">
+        <div style="font-size:17px;font-weight:900;color:#e2e8f0;">Range-bin fuel-savings economics</div>
+        <div style="font-size:11px;color:#94a3b8;">{html.escape(reg_label)} · fuel ${fuel_price_per_gal:.2f}/gal · current sim workup · calibration pending</div>
+      </div>
+      <div style="font-size:12px;color:#94a3b8;margin:6px 0 12px;">Horizontal bars show estimated dollar value across observed flights in each range bin. Each row also shows average distance, average altitude, fuel saved gallons, and weighted fuel-saved percent.</div>
+      {''.join(bars)}
+    </section>'''
+
+
 def _opportunity_feed_html(items: list[dict]) -> str:
     if not items:
         return ""
@@ -3407,6 +3478,7 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
     # lightweight simulator-derived fuel-savings estimate here because it is
     # central to the Insights story.
     fuel_savings_html = _mission_bins_summary_charts(_sim_rows_to_chart_points(_load_sim_result_rows()))
+    range_economics_html = _mission_economics_range_bars(region)
     route_map = database.get_route_map_data(top_n=80, region=region, family=family)
     route_airports_js = _json.dumps(route_map.get("airports", []))
     route_routes_js = _json.dumps(route_map.get("routes", []))
@@ -3486,6 +3558,7 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
 <div class="nav"><a href="{back_href_q}">← {back_label}</a> &nbsp;·&nbsp; <a href="/{nav_suffix}">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights{nav_suffix}">NA Insights</a> &nbsp;·&nbsp; <a href="/eu{nav_suffix}">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights{nav_suffix}">EU Insights</a> &nbsp;·&nbsp; <a href="/airlines{nav_suffix}">Airline dossiers</a></div>
 <h1>{title}</h1><div class="sub">{fam_label} operational patterns · region: <strong>{region}</strong> · auto-refreshes every 2 min</div>{fam_filter}
 {_airline_sales_evidence_html(family)}
+{range_economics_html}
 <div class="card" style="margin-bottom:18px;border-left:4px solid #22c55e;"><h2>Tamarack Mission-Benefit Setup</h2><div style="color:#cbd5e1;line-height:1.45;">{mission_note}</div>{export_links}{fuel_savings_html}</div>
 <div class="stats"><div class="stat"><div class="label">Last 24h</div><div class="value">{stats['today']}</div></div><div class="stat"><div class="label">Last 7 days</div><div class="value">{stats['week']}</div></div><div class="stat"><div class="label">All Time</div><div class="value">{data['total']}</div></div><div class="stat"><div class="label">Active Tails</div><div class="value">{data['active_tails']}</div></div><div class="stat"><div class="label">Avg Distance</div><div class="value">{avg}</div></div><div class="stat"><div class="label">Avg Flight Level</div><div class="value">{avg_fl}</div></div><div class="stat"><div class="label">Median Flight Level</div><div class="value">{med_fl}</div></div></div><div class="card" style="margin-bottom:18px;"><h2>NA vs EU altitude context</h2><div style="color:#cbd5e1;line-height:1.45;">Current page: <strong>{region}</strong> avg cruise/top altitude <strong>{avg_fl}</strong>, avg distance <strong>{avg}</strong>. Comparison region <strong>{compare_region}</strong>: avg cruise/top altitude <strong>{cmp_avg_fl}</strong>, avg distance <strong>{cmp_avg_dist}</strong>. EU short-haul flights often cruise lower because of airspace/ATC constraints; treat low FL as operational environment unless distance and route suggest otherwise.</div></div>
 <div class="grid"><div class="card chartbox"><h2>Flight Level Distribution</h2><canvas id="flChart"></canvas></div><div class="card chartbox"><h2>Aircraft Mix</h2><canvas id="typeChart"></canvas></div><div class="card chartbox"><h2>Top Operators</h2><canvas id="operatorChart"></canvas></div><div class="card chartbox"><h2>Arrival Airports</h2><canvas id="airportChart"></canvas></div><div class="card chartbox"><h2>Distance Distribution</h2><canvas id="distanceChart"></canvas></div><div class="card chartbox" style="grid-column:1/-1;"><h2>Block Speed vs Distance</h2><canvas id="blockChart"></canvas></div></div><h2>Route Map</h2><div id="routeMap"></div><div class="grid"><div class="card"><h2>Top Aircraft Variants</h2><table><thead><tr><th>Variant</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_types'])}</tbody></table></div><div class="card"><h2>Top Operators</h2><table><thead><tr><th>Operator</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_operators'])}</tbody></table></div><div class="card"><h2>Top Arrival Airports</h2><table><thead><tr><th>Airport</th><th style="text-align:right;">Arrivals</th><th></th></tr></thead><tbody>{simple_rows(data['top_airports'])}</tbody></table></div><div class="card"><h2>Top Routes</h2><table><thead><tr><th>Route</th><th style="text-align:right;">Flights</th><th>Avg Distance</th></tr></thead><tbody>{route_rows}</tbody></table></div></div>
@@ -4293,11 +4366,13 @@ def airline_dossiers():
           <div style="font-size:12px;color:#cbd5e1;line-height:1.45;"><strong>Evidence routes:</strong> {routes}</div>
         </div>''')
     nav_suffix = _family_query_suffix(family)
+    range_economics_html = _mission_economics_range_bars(region)
     return f'''<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Airline Dossiers — A320/737 Sightings</title>
     <style>body{{background:#0f172a;color:#e2e8f0;font-family:Arial,sans-serif;padding:24px}}a{{color:#60a5fa;text-decoration:none}} .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px}}</style></head><body>
     <div style="margin-bottom:14px;"><a href="/{nav_suffix}">← Sightings</a> · <a href="/insights{nav_suffix}">Insights</a> · <a href="/eu-insights{nav_suffix}">EU Insights</a></div>
     <h1>Airline Dossiers</h1><div style="color:#94a3b8;margin-bottom:16px;">Airline-facing rollup: observed routes × current simulator distance bins × transparent fuel/cost estimate. Fuel price assumption: ${fuel_price_per_lb:.2f}/lb Jet-A. Calibration caveat stays visible until the A320 config is finalized.</div>
     {_family_filter_html(family, "/airlines")}
+    {range_economics_html}
     <div class="grid">{''.join(cards) or '<div style="color:#94a3b8;">No airline dossier rows for this filter yet.</div>'}</div>
     </body></html>'''
 

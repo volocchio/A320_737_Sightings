@@ -103,6 +103,65 @@ AIRLINE_TYPE_LABEL_SQL = (
 )
 
 
+AIRLINE_OPERATOR_LABELS = {
+    "AAL": "American Airlines",
+    "DAL": "Delta Air Lines",
+    "UAL": "United Airlines",
+    "JBU": "JetBlue Airways",
+    "AAY": "Allegiant Air",
+    "FFT": "Frontier Airlines",
+    "NKS": "Spirit Airlines",
+    "SWA": "Southwest Airlines",
+    "ASA": "Alaska Airlines",
+    "HAL": "Hawaiian Airlines",
+    "ACA": "Air Canada",
+    "ROU": "Air Canada Rouge",
+    "WJA": "WestJet",
+    "BAW": "British Airways",
+    "DLH": "Lufthansa",
+    "AFR": "Air France",
+    "KLM": "KLM",
+    "EZY": "easyJet",
+    "EJU": "easyJet Europe",
+    "RYR": "Ryanair",
+    "WZZ": "Wizz Air",
+    "IBE": "Iberia",
+    "VLG": "Vueling",
+    "TAP": "TAP Air Portugal",
+    "SAS": "SAS Scandinavian",
+    "VIV": "VivaAerobus",
+    "VOI": "Volaris",
+    "AVA": "Avianca",
+    "LAN": "LATAM Airlines",
+    "TAM": "LATAM Brasil",
+    "CMP": "Copa Airlines",
+}
+
+
+def _operator_display_label(raw: str | None) -> str:
+    op = (raw or "").strip().upper()
+    if not op or op in {"UNKNOWN", "—", "-", "NONE"}:
+        return "Unidentified operator"
+    return AIRLINE_OPERATOR_LABELS.get(op, op)
+
+
+def _friendly_operator_rollup(rows: list[dict], limit: int) -> list[dict]:
+    totals: dict[str, int] = {}
+    raw_codes: dict[str, set[str]] = {}
+    for r in rows:
+        label = _operator_display_label(r.get("label"))
+        totals[label] = totals.get(label, 0) + int(r.get("n") or 0)
+        raw_codes.setdefault(label, set()).add((r.get("label") or "").strip().upper())
+    ordered = sorted(
+        totals.items(),
+        key=lambda kv: (kv[0] == "Unidentified operator", -kv[1], kv[0]),
+    )[:limit]
+    return [
+        {"label": label, "n": n, "raw_codes": sorted(c for c in raw_codes.get(label, set()) if c and c != label.upper())}
+        for label, n in ordered
+    ]
+
+
 DEDUP_CACHE_SQL = """
     SELECT * FROM (
       SELECT s.*,
@@ -2654,11 +2713,15 @@ def get_airline_insights(region: str = "NA", limit: int = 15, family: str | None
             FROM v_sightings_dedup WHERE region=?{family_sql}
             GROUP BY label ORDER BY n DESC LIMIT ?
         """, (region, *family_args, limit)).fetchall()]
-        top_operators = [dict(r) for r in conn.execute(f"""
+        # Pull extra rows so known airlines can be surfaced ahead of the large
+        # unidentified bucket; this keeps the chart airline-facing instead of
+        # leading with "Unknown".
+        raw_operators = [dict(r) for r in conn.execute(f"""
             SELECT COALESCE(NULLIF(operator,''), 'Unknown') AS label, COUNT(*) AS n
             FROM v_sightings_dedup WHERE region=?{family_sql}
             GROUP BY label ORDER BY n DESC LIMIT ?
-        """, (region, *family_args, limit)).fetchall()]
+        """, (region, *family_args, max(limit * 4, 40))).fetchall()]
+        top_operators = _friendly_operator_rollup(raw_operators, limit)
         top_airports = [dict(r) for r in conn.execute(f"""
             SELECT COALESCE(NULLIF(dest_icao,''), 'Unknown') AS label, COUNT(*) AS n
             FROM v_sightings_dedup WHERE region=?{family_sql}

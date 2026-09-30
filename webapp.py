@@ -3481,8 +3481,6 @@ def dashboard():
     last_poll = daemon_state.get("last_poll_utc") or "—"
     last_error = daemon_state.get("last_error") or ""
     stats = database.get_period_stats(family=family)
-    opp_feed = database.get_airline_opportunity_feed(region="NA", family=family, limit=6)
-    opportunity_html = _opportunity_feed_html(opp_feed)
     # A320/737 app: no inherited ATLAS prospect/fleet-penetration panels.
 
     status_color = {"running": "#22c55e", "error": "#ef4444", "starting": "#f59e0b"}.get(status, "#888")
@@ -3590,8 +3588,6 @@ def dashboard():
   </div>
   </div> <!-- /sticky-top -->
 
-  {opportunity_html}
-
   <!-- Airline sightings stream. -->
 
   <!-- Pagination controls (top) -->
@@ -3647,9 +3643,6 @@ def eu_dashboard():
     last_poll  = daemon_state.get("last_poll_utc") or "—"
     last_error = daemon_state.get("last_error") or ""
     stats      = database.get_period_stats(region="EU_UK", family=family)
-    opp_feed   = database.get_airline_opportunity_feed(region="EU_UK", family=family, limit=6)
-    opportunity_html = _opportunity_feed_html(opp_feed)
-
     status_color = {"running": "#22c55e", "error": "#ef4444", "starting": "#f59e0b"}.get(status, "#888")
     status_dot   = f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{status_color};margin-right:6px;"></span>'
 
@@ -3759,8 +3752,6 @@ def eu_dashboard():
     {_watch_pill_html()}
   </div>
   </div> <!-- /sticky-top -->
-
-  {opportunity_html}
 
   <!-- Pagination controls (top) -->
   {_pagination_html(page, total_pages, per_page, total_sightings)}

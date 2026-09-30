@@ -4350,12 +4350,18 @@ def airline_dossiers():
             d["weighted_pct"] += pct
             d["simmed"] += 1
     dossiers = []
+    low_confidence_flights = 0
     for d in by_op.values():
-        simmed = max(1, d["simmed"])
+        # Airline dossiers are sales cards, not raw telemetry. Hide tiny/unsimmed
+        # operator-code crumbs (UKN/VPE/etc.) so the page stays credible.
+        if d["flights"] < 25 or d["simmed"] <= 0:
+            low_confidence_flights += d["flights"]
+            continue
+        simmed = d["simmed"]
         monthly_fuel_lb = d["fuel_lb"]
         annual_usd = monthly_fuel_lb * 12.0 * fuel_price_per_lb
         top_routes = sorted(d["routes"].items(), key=lambda kv: -kv[1])[:4]
-        dossiers.append({**d, "tails_n": len(d["tails"]), "avg_pct": d["weighted_pct"] / simmed if d["simmed"] else 0.0, "annual_usd": annual_usd, "top_routes": top_routes})
+        dossiers.append({**d, "tails_n": len(d["tails"]), "avg_pct": d["weighted_pct"] / simmed, "annual_usd": annual_usd, "top_routes": top_routes})
     dossiers.sort(key=lambda x: (-x["annual_usd"], -x["flights"]))
     cards = []
     for d in dossiers[:30]:
@@ -4375,7 +4381,8 @@ def airline_dossiers():
     unknown_note = (
         f'<div style="background:#2d1e0a;border-left:4px solid #f59e0b;border-radius:8px;padding:10px 12px;color:#fcd34d;margin:0 0 14px;font-size:13px;">'
         f'Excluded {unidentified_flights:,} unidentified/operator-missing flights from airline prospect cards. They are aggregate data-quality backlog, not a sales target.'
-        f'</div>'
+        + (f' Also hid {low_confidence_flights:,} low-confidence/low-volume operator-code rows.' if low_confidence_flights else '')
+        + f'</div>'
         if unidentified_flights else ""
     )
     return f'''<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Airline Dossiers — A320/737 Sightings</title>

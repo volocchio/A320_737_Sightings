@@ -216,6 +216,24 @@ def init_db() -> None:
             log.info("Migrated sightings table: added fa_flight_id column "
                      "(seeded from flight_id for FA source)")
 
+    # Query indexes for dashboard stats, region pages, and dedup ordering.
+    with _connect() as conn:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sightings_arrived ON sightings(arrived_utc)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sightings_region_arrived ON sightings(region, arrived_utc)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sightings_region_id ON sightings(region, id DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sightings_scope_id ON sightings(scope_tier, id DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sightings_scope_arrived ON sightings(scope_tier, arrived_utc)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sightings_family ON sightings(ac_subvariant, ac_type)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sightings_dedup_key ON sightings("
+            "UPPER(COALESCE(NULLIF(tail_number, ''), 'id_' || id)), "
+            "UPPER(IFNULL(origin_icao, '')), "
+            "UPPER(IFNULL(dest_icao, '')), "
+            "DATE(arrived_utc), "
+            "source, id DESC)"
+        )
+        conn.commit()
+
     # ── Deduplication view ─────────────────────────────────────────────────
     # Same flight reported by multiple sources (FlightAware + ADSB Exchange +
     # OpenSky) shouldn't show up as multiple rows on the dashboard. Group by

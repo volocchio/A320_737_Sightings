@@ -40,6 +40,33 @@ import notify_settings
 
 app = Flask(__name__)
 
+# The dashboard pages are expensive because they render from a dedup window-view
+# over a large sightings table. They auto-refresh every 60s, so a short HTML
+# cache keeps normal page loads snappy without materially staling the display.
+_PAGE_CACHE_TTL_SEC = 55.0
+_PAGE_CACHE: dict[str, tuple[float, str]] = {}
+
+
+def _page_cache_get(key: str) -> str | None:
+    item = _PAGE_CACHE.get(key)
+    if not item:
+        return None
+    ts, html_text = item
+    if (_time.time() - ts) > _PAGE_CACHE_TTL_SEC:
+        _PAGE_CACHE.pop(key, None)
+        return None
+    return html_text
+
+
+def _page_cache_set(key: str, html_text: str) -> str:
+    _PAGE_CACHE[key] = (_time.time(), html_text)
+    # Tiny app: keep cache bounded even if query params vary.
+    if len(_PAGE_CACHE) > 32:
+        oldest = sorted(_PAGE_CACHE.items(), key=lambda kv: kv[1][0])[:8]
+        for old_key, _ in oldest:
+            _PAGE_CACHE.pop(old_key, None)
+    return html_text
+
 SIM_RESULTS_PATHS = [
     Path("/tmp/tma_a320_bin_sim.json"),
     Path("./tma_a320_bin_sim.json"),
@@ -3457,6 +3484,10 @@ const routeRoutes = {route_routes_js};
 
 @app.get("/")
 def dashboard():
+    cache_key = f"dashboard:{request.full_path}"
+    cached = _page_cache_get(cache_key)
+    if cached is not None:
+        return cached
     # Pagination: per_page in {25, 50, 100}, page ≥ 1
     try:
         per_page = int(request.args.get("per_page", 50))
@@ -3609,11 +3640,15 @@ def dashboard():
   {_chat_widget_html()}
 </body>
 </html>"""
-    return html
+    return _page_cache_set(cache_key, html)
 
 
 @app.get("/eu")
 def eu_dashboard():
+    cache_key = f"eu_dashboard:{request.full_path}"
+    cached = _page_cache_get(cache_key)
+    if cached is not None:
+        return cached
     """
     EU_UK-scoped mirror of the NA homepage `/`. Same sticky header, same KPI
     stats layout, same 16-column flight table (via `_render_sighting_row_html`),
@@ -3772,7 +3807,7 @@ def eu_dashboard():
   {_chat_widget_html()}
 </body>
 </html>"""
-    return html
+    return _page_cache_set(cache_key, html)
 
 
 def _plan_rule_badge(rule: str) -> str:

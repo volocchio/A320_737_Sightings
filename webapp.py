@@ -423,8 +423,7 @@ def _airline_sales_evidence_html(family: str | None = None) -> str:
         </div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <a href="/prospects" style="background:#0f766e;color:#fff;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:800;text-decoration:none;">🎯 Prospect dossiers</a>
-        <a href="/plan" style="background:#7c3aed;color:#fff;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:800;text-decoration:none;">📋 Flight plan</a>
+        <a href="/airlines{suffix}" style="background:#0f766e;color:#fff;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:800;text-decoration:none;">🏢 Airline dossiers</a>
         <a href="/insights{suffix}" style="background:#1d4ed8;color:#fff;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:800;text-decoration:none;">📊 Insights</a>
       </div>
     </div>
@@ -3484,7 +3483,7 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
 .stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}} .stat,.card{{background:#1e293b;border-radius:8px;padding:16px}} .label{{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px}} .value{{font-size:26px;font-weight:800;color:#60a5fa}}
 .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-bottom:18px}} #routeMap{{height:420px;border-radius:8px;border:1px solid #334155;margin-bottom:18px;background:#020617}} .chartbox{{height:320px}} h2{{font-size:15px;margin-bottom:10px}} table{{width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden}} th{{background:#334155;color:#94a3b8;font-size:11px;text-transform:uppercase;text-align:left;padding:9px}} td{{padding:9px;border-bottom:1px solid #334155;font-size:13px}} tr:hover{{background:#243244}}
 </style></head><body>
-<div class="nav"><a href="{back_href_q}">← {back_label}</a> &nbsp;·&nbsp; <a href="/{nav_suffix}">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights{nav_suffix}">NA Insights</a> &nbsp;·&nbsp; <a href="/eu{nav_suffix}">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights{nav_suffix}">EU Insights</a> &nbsp;·&nbsp; <a href="/prospects">Prospect dossiers</a> &nbsp;·&nbsp; <a href="/plan">Flight plan</a></div>
+<div class="nav"><a href="{back_href_q}">← {back_label}</a> &nbsp;·&nbsp; <a href="/{nav_suffix}">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights{nav_suffix}">NA Insights</a> &nbsp;·&nbsp; <a href="/eu{nav_suffix}">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights{nav_suffix}">EU Insights</a> &nbsp;·&nbsp; <a href="/airlines{nav_suffix}">Airline dossiers</a></div>
 <h1>{title}</h1><div class="sub">{fam_label} operational patterns · region: <strong>{region}</strong> · auto-refreshes every 2 min</div>{fam_filter}
 {_airline_sales_evidence_html(family)}
 <div class="card" style="margin-bottom:18px;border-left:4px solid #22c55e;"><h2>Tamarack Mission-Benefit Setup</h2><div style="color:#cbd5e1;line-height:1.45;">{mission_note}</div>{export_links}{fuel_savings_html}</div>
@@ -4203,6 +4202,104 @@ def plan_enrich():
         return jsonify({"ok": True})
     except Exception as e:                                # noqa: BLE001
         return jsonify({"error": str(e)}), 500
+
+
+def _sim_bin_lookup() -> dict[tuple[str, str, str], dict]:
+    return {
+        (str(r.get("region") or ""), str(r.get("distance_bin") or ""), str(r.get("altitude_bin") or "")): r
+        for r in _load_sim_result_rows()
+        if r.get("fuel_saved_pct_avg") is not None
+    }
+
+
+def _dist_bin_label(nm: float | None) -> str | None:
+    if nm is None: return None
+    if 250 <= nm < 500: return "250–500 nm"
+    if 500 <= nm < 750: return "500–750 nm"
+    if 750 <= nm < 1000: return "750–1000 nm"
+    if 1000 <= nm < 1500: return "1000–1500 nm"
+    if 1500 <= nm < 2000: return "1500–2000 nm"
+    if nm >= 2000: return "2000+ nm"
+    return None
+
+
+def _alt_bin_label(ft: float | None) -> str | None:
+    if ft is None: return None
+    if 31000 <= ft < 35000: return "FL310–350"
+    if 35000 <= ft < 39000: return "FL350–390"
+    if ft >= 39000: return "FL390+"
+    return None
+
+
+@app.get("/airlines")
+def airline_dossiers():
+    """Airline-facing dossier rollup: observed flying × sim-bin fuel economics."""
+    family = _normalize_family(request.args.get("family"))
+    region = (request.args.get("region") or "NA").strip().upper()
+    region = region if region in {"NA", "EU_UK", "OTHER"} else "NA"
+    fam_sql, fam_args = database.family_where_clause(family)
+    sim = _sim_bin_lookup()
+    fuel_price_per_lb = 0.50  # ≈ $3.35/gal Jet-A ÷ 6.7 lb/gal; transparent estimate.
+    rows = []
+    with database._connect() as conn:
+        raw = [dict(r) for r in conn.execute(f"""
+            SELECT COALESCE(NULLIF(operator,''), 'Unknown') AS operator,
+                   origin_icao, dest_icao, tail_number, ac_type,
+                   distance_nm,
+                   COALESCE(sustained_top_alt_ft, top_altitude_ft, initial_cruise_alt_ft) AS alt_ft,
+                   arrived_utc
+            FROM v_sightings_dedup
+            WHERE region=?{fam_sql}
+              AND arrived_utc >= datetime('now','-30 days')
+              AND distance_nm IS NOT NULL AND distance_nm > 0
+            ORDER BY id DESC
+        """, (region, *fam_args)).fetchall()]
+    by_op: dict[str, dict] = {}
+    for r in raw:
+        label = database._operator_display_label(r.get("operator"))
+        d = by_op.setdefault(label, {"airline": label, "flights": 0, "tails": set(), "routes": {}, "fuel_lb": 0.0, "weighted_pct": 0.0, "simmed": 0})
+        d["flights"] += 1
+        if r.get("tail_number"): d["tails"].add(r["tail_number"])
+        route = f"{r.get('origin_icao') or '????'}→{r.get('dest_icao') or '????'}"
+        d["routes"][route] = d["routes"].get(route, 0) + 1
+        key = (region, _dist_bin_label(r.get("distance_nm")), _alt_bin_label(r.get("alt_ft")))
+        sr = sim.get(key)
+        if sr:
+            scenarios = sr.get("weight_scenarios") or []
+            avg_lb = sum(float(x.get("fuel_saved_lb") or 0) for x in scenarios) / max(1, len(scenarios))
+            pct = float(sr.get("fuel_saved_pct_avg") or 0)
+            d["fuel_lb"] += avg_lb
+            d["weighted_pct"] += pct
+            d["simmed"] += 1
+    dossiers = []
+    for d in by_op.values():
+        simmed = max(1, d["simmed"])
+        monthly_fuel_lb = d["fuel_lb"]
+        annual_usd = monthly_fuel_lb * 12.0 * fuel_price_per_lb
+        top_routes = sorted(d["routes"].items(), key=lambda kv: -kv[1])[:4]
+        dossiers.append({**d, "tails_n": len(d["tails"]), "avg_pct": d["weighted_pct"] / simmed if d["simmed"] else 0.0, "annual_usd": annual_usd, "top_routes": top_routes})
+    dossiers.sort(key=lambda x: (-x["annual_usd"], -x["flights"]))
+    cards = []
+    for d in dossiers[:30]:
+        routes = " · ".join(f"{html.escape(k)} ({v})" for k, v in d["top_routes"]) or "—"
+        cards.append(f'''<div style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:14px;">
+          <div style="font-size:18px;font-weight:900;color:#e2e8f0;">{html.escape(d['airline'])}</div>
+          <div style="color:#94a3b8;font-size:12px;margin:4px 0 10px;">{d['flights']:,} observed {_family_label(family)} flights · {d['tails_n']:,} tails · {region}</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;">
+            <div><div style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Avg fuel saved</div><div style="font-size:20px;font-weight:900;color:#22c55e;">{d['avg_pct']:.1f}%</div></div>
+            <div><div style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Est. annual savings</div><div style="font-size:20px;font-weight:900;color:#fbbf24;">${d['annual_usd']:,.0f}</div></div>
+            <div><div style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Sim-matched flights</div><div style="font-size:20px;font-weight:900;color:#93c5fd;">{d['simmed']:,}</div></div>
+          </div>
+          <div style="font-size:12px;color:#cbd5e1;line-height:1.45;"><strong>Evidence routes:</strong> {routes}</div>
+        </div>''')
+    nav_suffix = _family_query_suffix(family)
+    return f'''<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Airline Dossiers — A320/737 Sightings</title>
+    <style>body{{background:#0f172a;color:#e2e8f0;font-family:Arial,sans-serif;padding:24px}}a{{color:#60a5fa;text-decoration:none}} .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px}}</style></head><body>
+    <div style="margin-bottom:14px;"><a href="/{nav_suffix}">← Sightings</a> · <a href="/insights{nav_suffix}">Insights</a> · <a href="/eu-insights{nav_suffix}">EU Insights</a></div>
+    <h1>Airline Dossiers</h1><div style="color:#94a3b8;margin-bottom:16px;">Airline-facing rollup: observed routes × current simulator distance bins × transparent fuel/cost estimate. Fuel price assumption: ${fuel_price_per_lb:.2f}/lb Jet-A. Calibration caveat stays visible until the A320 config is finalized.</div>
+    {_family_filter_html(family, "/airlines")}
+    <div class="grid">{''.join(cards) or '<div style="color:#94a3b8;">No airline dossier rows for this filter yet.</div>'}</div>
+    </body></html>'''
 
 
 @app.get("/prospects")

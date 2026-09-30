@@ -95,6 +95,14 @@ def family_where_clause(family: str | None, alias: str = "") -> tuple[str, tuple
     return f" AND UPPER(COALESCE({col}, '')) IN ({placeholders})", tuple(types)
 
 
+AIRLINE_TYPE_LABEL_SQL = (
+    "COALESCE(NULLIF(CASE "
+    "WHEN UPPER(COALESCE(ac_subvariant,'')) IN "
+    "('A318','A319','A320','A321','A19N','A20N','A21N','B736','B737','B738','B739','B37M','B38M','B39M','B3XM') "
+    "THEN ac_subvariant ELSE ac_type END, ''), 'Unknown')"
+)
+
+
 DEDUP_CACHE_SQL = """
     SELECT * FROM (
       SELECT s.*,
@@ -2642,7 +2650,7 @@ def get_airline_insights(region: str = "NA", limit: int = 15, family: str | None
         active_tails = conn.execute(f"SELECT COUNT(DISTINCT tail_number) FROM v_sightings_dedup WHERE region=?{family_sql} AND tail_number IS NOT NULL AND tail_number!=''", (region, *family_args)).fetchone()[0]
         avg_distance = conn.execute(f"SELECT AVG(distance_nm) FROM v_sightings_dedup WHERE region=?{family_sql} AND distance_nm IS NOT NULL AND distance_nm > 0", (region, *family_args)).fetchone()[0]
         top_types = [dict(r) for r in conn.execute(f"""
-            SELECT COALESCE(NULLIF(ac_subvariant,''), NULLIF(ac_type,''), 'Unknown') AS label, COUNT(*) AS n
+            SELECT {AIRLINE_TYPE_LABEL_SQL} AS label, COUNT(*) AS n
             FROM v_sightings_dedup WHERE region=?{family_sql}
             GROUP BY label ORDER BY n DESC LIMIT ?
         """, (region, *family_args, limit)).fetchall()]
@@ -2663,7 +2671,7 @@ def get_airline_insights(region: str = "NA", limit: int = 15, family: str | None
             GROUP BY label ORDER BY n DESC LIMIT ?
         """, (region, *family_args, limit)).fetchall()]
         longest = [dict(r) for r in conn.execute(f"""
-            SELECT tail_number, COALESCE(NULLIF(ac_subvariant,''), NULLIF(ac_type,''), 'Unknown') AS type,
+            SELECT tail_number, {AIRLINE_TYPE_LABEL_SQL} AS type,
                    origin_icao, dest_icao, ROUND(distance_nm) AS distance_nm, arrived_utc, COALESCE(NULLIF(operator,''), 'Unknown') AS operator
             FROM v_sightings_dedup
             WHERE region=?{family_sql} AND distance_nm IS NOT NULL AND distance_nm > 0
@@ -2672,7 +2680,7 @@ def get_airline_insights(region: str = "NA", limit: int = 15, family: str | None
         metric_rows = [dict(r) for r in conn.execute(f"""
             SELECT distance_nm, departed_utc, arrived_utc,
                    sustained_top_alt_ft, top_altitude_ft, initial_cruise_alt_ft,
-                   COALESCE(NULLIF(ac_subvariant,''), NULLIF(ac_type,''), 'Unknown') AS type
+                   {AIRLINE_TYPE_LABEL_SQL} AS type
             FROM v_sightings_dedup
             WHERE region=?{family_sql} AND distance_nm IS NOT NULL AND distance_nm > 0
               AND departed_utc IS NOT NULL AND arrived_utc IS NOT NULL

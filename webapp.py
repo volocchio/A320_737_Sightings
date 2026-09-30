@@ -612,8 +612,8 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
     }
     parts = [
         '<div style="margin-top:18px;border-top:1px solid #334155;padding-top:14px;">',
-        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Fuel savings by stage length — NA vs EU/UK</div>',
-        '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">X-axis = distance bin. Green = EU/UK, orange = North America.</div>',
+        '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Estimated fuel savings by distance bin — simulator result</div>',
+        '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Weighted by observed flights in each distance × altitude bin. Green = EU/UK, orange = North America. Values are % fuel saved from the current Tamarack Mission Analysis workup.</div>',
         f'<svg width="100%" viewBox="0 0 {width} {height}" style="display:block;max-width:100%;" role="img" aria-label="Weighted savings by stage length">',
         f'<rect x="0" y="0" width="{width}" height="{height}" rx="10" fill="#0f172a"/>',
     ]
@@ -3384,10 +3384,10 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
     compare_region = "EU_UK" if region == "NA" else "NA"
     compare = database.get_airline_insights(region=compare_region, limit=5, family=family)
     stats = database.get_period_stats(region=region, family=family)
-    # Mission bins are expensive and already shown/exported from the main
-    # dashboard pages. Keep Insights focused on analytical rollups so clicking
-    # EU/NA Insights does not look dead on first render.
-    mission_bins_html = ""
+    # Keep the heavy mission-bin table on the main dashboards, but show the
+    # lightweight simulator-derived fuel-savings estimate here because it is
+    # central to the Insights story.
+    fuel_savings_html = _mission_bins_summary_charts(_sim_rows_to_chart_points(_load_sim_result_rows()))
     route_map = database.get_route_map_data(top_n=80, region=region, family=family)
     route_airports_js = _json.dumps(route_map.get("airports", []))
     route_routes_js = _json.dumps(route_map.get("routes", []))
@@ -3466,7 +3466,7 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
 </style></head><body>
 <div class="nav"><a href="{back_href_q}">← {back_label}</a> &nbsp;·&nbsp; <a href="/{nav_suffix}">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights{nav_suffix}">NA Insights</a> &nbsp;·&nbsp; <a href="/eu{nav_suffix}">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights{nav_suffix}">EU Insights</a></div>
 <h1>{title}</h1><div class="sub">{fam_label} operational patterns · region: <strong>{region}</strong> · auto-refreshes every 2 min</div>{fam_filter}
-<div class="card" style="margin-bottom:18px;border-left:4px solid #22c55e;"><h2>Tamarack Mission-Benefit Setup</h2><div style="color:#cbd5e1;line-height:1.45;">{mission_note}</div>{export_links}</div>
+<div class="card" style="margin-bottom:18px;border-left:4px solid #22c55e;"><h2>Tamarack Mission-Benefit Setup</h2><div style="color:#cbd5e1;line-height:1.45;">{mission_note}</div>{export_links}{fuel_savings_html}</div>
 <div class="stats"><div class="stat"><div class="label">Last 24h</div><div class="value">{stats['today']}</div></div><div class="stat"><div class="label">Last 7 days</div><div class="value">{stats['week']}</div></div><div class="stat"><div class="label">All Time</div><div class="value">{data['total']}</div></div><div class="stat"><div class="label">Active Tails</div><div class="value">{data['active_tails']}</div></div><div class="stat"><div class="label">Avg Distance</div><div class="value">{avg}</div></div><div class="stat"><div class="label">Avg Flight Level</div><div class="value">{avg_fl}</div></div><div class="stat"><div class="label">Median Flight Level</div><div class="value">{med_fl}</div></div></div><div class="card" style="margin-bottom:18px;"><h2>NA vs EU altitude context</h2><div style="color:#cbd5e1;line-height:1.45;">Current page: <strong>{region}</strong> avg cruise/top altitude <strong>{avg_fl}</strong>, avg distance <strong>{avg}</strong>. Comparison region <strong>{compare_region}</strong>: avg cruise/top altitude <strong>{cmp_avg_fl}</strong>, avg distance <strong>{cmp_avg_dist}</strong>. EU short-haul flights often cruise lower because of airspace/ATC constraints; treat low FL as operational environment unless distance and route suggest otherwise.</div></div>
 <div class="grid"><div class="card chartbox"><h2>Flight Level Distribution</h2><canvas id="flChart"></canvas></div><div class="card chartbox"><h2>Aircraft Mix</h2><canvas id="typeChart"></canvas></div><div class="card chartbox"><h2>Top Operators</h2><canvas id="operatorChart"></canvas></div><div class="card chartbox"><h2>Arrival Airports</h2><canvas id="airportChart"></canvas></div><div class="card chartbox"><h2>Distance Distribution</h2><canvas id="distanceChart"></canvas></div><div class="card chartbox" style="grid-column:1/-1;"><h2>Block Speed vs Distance</h2><canvas id="blockChart"></canvas></div></div><h2>Route Map</h2><div id="routeMap"></div><div class="grid"><div class="card"><h2>Top Aircraft Variants</h2><table><thead><tr><th>Variant</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_types'])}</tbody></table></div><div class="card"><h2>Top Operators</h2><table><thead><tr><th>Operator</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_operators'])}</tbody></table></div><div class="card"><h2>Top Arrival Airports</h2><table><thead><tr><th>Airport</th><th style="text-align:right;">Arrivals</th><th></th></tr></thead><tbody>{simple_rows(data['top_airports'])}</tbody></table></div><div class="card"><h2>Top Routes</h2><table><thead><tr><th>Route</th><th style="text-align:right;">Flights</th><th>Avg Distance</th></tr></thead><tbody>{route_rows}</tbody></table></div></div>
 <h2>Longest Observed Flights</h2><table><thead><tr><th>Tail</th><th>Type</th><th>Route</th><th style="text-align:right;">Distance</th><th>Operator</th><th>Arrived</th></tr></thead><tbody>{longest_html}</tbody></table>
@@ -3477,8 +3477,29 @@ const airportLabels = {airport_labels_js}, airportCounts = {airport_counts_js};
 const distLabels = {dist_labels_js}, distCounts = {dist_counts_js};
 const blockScatter = {block_scatter_js};
 const flLabels = {fl_labels_js}, flCounts = {fl_counts_js};
-const chartOpts = {{ responsive:true, maintainAspectRatio:false, plugins:{{legend:{{labels:{{color:'#cbd5e1'}}}}}}, scales:{{x:{{ticks:{{color:'#94a3b8'}},grid:{{color:'#334155'}}}},y:{{ticks:{{color:'#94a3b8'}},grid:{{color:'#334155'}}}}}} }};
-function bar(id, labels, data, label, color) {{ const el=document.getElementById(id); if(!el || typeof Chart==='undefined') return; new Chart(el, {{type:'bar', data:{{labels, datasets:[{{label, data, backgroundColor:color, borderColor:color}}]}}, options:chartOpts}}); }}
+const valueLabelPlugin = {{
+  id:'valueLabelPlugin',
+  afterDatasetsDraw(chart) {{
+    const {{ctx}} = chart;
+    ctx.save();
+    ctx.font = '700 11px system-ui, -apple-system, Segoe UI, sans-serif';
+    ctx.fillStyle = '#e2e8f0';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    chart.data.datasets.forEach((dataset, di) => {{
+      const meta = chart.getDatasetMeta(di);
+      meta.data.forEach((bar, i) => {{
+        const v = dataset.data[i];
+        if (v === null || v === undefined || Number(v) === 0) return;
+        const label = Number(v).toLocaleString();
+        ctx.fillText(label, bar.x, Math.max(12, bar.y - 4));
+      }});
+    }});
+    ctx.restore();
+  }}
+}};
+const chartOpts = {{ responsive:true, maintainAspectRatio:false, plugins:{{legend:{{labels:{{color:'#cbd5e1'}}}}, valueLabelPlugin:{{}}}}, scales:{{x:{{ticks:{{color:'#94a3b8'}},grid:{{color:'#334155'}}}},y:{{ticks:{{color:'#94a3b8'}},grid:{{color:'#334155'}}}}}} }};
+function bar(id, labels, data, label, color) {{ const el=document.getElementById(id); if(!el || typeof Chart==='undefined') return; new Chart(el, {{type:'bar', data:{{labels, datasets:[{{label, data, backgroundColor:color, borderColor:color}}]}}, options:chartOpts, plugins:[valueLabelPlugin]}}); }}
 bar('flChart', flLabels, flCounts, 'Flights', '#f472b6');
 bar('typeChart', typeLabels, typeCounts, 'Flights', '#60a5fa');
 bar('operatorChart', opLabels, opCounts, 'Flights', '#22c55e');

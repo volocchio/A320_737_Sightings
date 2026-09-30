@@ -411,6 +411,26 @@ def _family_filter_html(active: str | None, base_path: str) -> str:
     return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px;align-items:center;"><span style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.8px;">Type</span>' + pill("A320 CEO", "A320CEO") + pill("A320 NEO", "A320NEO") + pill("A320 All", "A320") + pill("737 Family", "B737") + pill("All", None) + '</div>'
 
 
+def _airline_sales_evidence_html(family: str | None = None) -> str:
+    suffix = _family_query_suffix(family)
+    return f'''
+  <section style="background:#1e293b;border:1px solid #334155;border-left:4px solid #38bdf8;border-radius:10px;padding:14px 16px;margin:0 0 18px;">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:16px;font-weight:800;color:#e2e8f0;margin-bottom:4px;">Airline sales evidence</div>
+        <div style="font-size:12px;color:#94a3b8;line-height:1.45;max-width:760px;">
+          Use this as the airline-facing trail: fleet/dossier evidence, operator patterns, mission bins, fuel-savings estimates, and recent route examples. Click a tail in the sightings table for its pre-call dossier.
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <a href="/prospects" style="background:#0f766e;color:#fff;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:800;text-decoration:none;">🎯 Prospect dossiers</a>
+        <a href="/plan" style="background:#7c3aed;color:#fff;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:800;text-decoration:none;">📋 Flight plan</a>
+        <a href="/insights{suffix}" style="background:#1d4ed8;color:#fff;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:800;text-decoration:none;">📊 Insights</a>
+      </div>
+    </div>
+  </section>'''
+
+
 def _mission_bins_html(bins: list[dict], region: str = "NA") -> str:
     if not bins:
         return '<div class="card" style="margin-bottom:18px;"><h2>Mission Bin Bridge</h2><div style="color:#94a3b8;">No distance/altitude bins yet for this filter.</div></div>'
@@ -3464,8 +3484,9 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
 .stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}} .stat,.card{{background:#1e293b;border-radius:8px;padding:16px}} .label{{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px}} .value{{font-size:26px;font-weight:800;color:#60a5fa}}
 .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-bottom:18px}} #routeMap{{height:420px;border-radius:8px;border:1px solid #334155;margin-bottom:18px;background:#020617}} .chartbox{{height:320px}} h2{{font-size:15px;margin-bottom:10px}} table{{width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden}} th{{background:#334155;color:#94a3b8;font-size:11px;text-transform:uppercase;text-align:left;padding:9px}} td{{padding:9px;border-bottom:1px solid #334155;font-size:13px}} tr:hover{{background:#243244}}
 </style></head><body>
-<div class="nav"><a href="{back_href_q}">← {back_label}</a> &nbsp;·&nbsp; <a href="/{nav_suffix}">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights{nav_suffix}">NA Insights</a> &nbsp;·&nbsp; <a href="/eu{nav_suffix}">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights{nav_suffix}">EU Insights</a></div>
+<div class="nav"><a href="{back_href_q}">← {back_label}</a> &nbsp;·&nbsp; <a href="/{nav_suffix}">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights{nav_suffix}">NA Insights</a> &nbsp;·&nbsp; <a href="/eu{nav_suffix}">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights{nav_suffix}">EU Insights</a> &nbsp;·&nbsp; <a href="/prospects">Prospect dossiers</a> &nbsp;·&nbsp; <a href="/plan">Flight plan</a></div>
 <h1>{title}</h1><div class="sub">{fam_label} operational patterns · region: <strong>{region}</strong> · auto-refreshes every 2 min</div>{fam_filter}
+{_airline_sales_evidence_html(family)}
 <div class="card" style="margin-bottom:18px;border-left:4px solid #22c55e;"><h2>Tamarack Mission-Benefit Setup</h2><div style="color:#cbd5e1;line-height:1.45;">{mission_note}</div>{export_links}{fuel_savings_html}</div>
 <div class="stats"><div class="stat"><div class="label">Last 24h</div><div class="value">{stats['today']}</div></div><div class="stat"><div class="label">Last 7 days</div><div class="value">{stats['week']}</div></div><div class="stat"><div class="label">All Time</div><div class="value">{data['total']}</div></div><div class="stat"><div class="label">Active Tails</div><div class="value">{data['active_tails']}</div></div><div class="stat"><div class="label">Avg Distance</div><div class="value">{avg}</div></div><div class="stat"><div class="label">Avg Flight Level</div><div class="value">{avg_fl}</div></div><div class="stat"><div class="label">Median Flight Level</div><div class="value">{med_fl}</div></div></div><div class="card" style="margin-bottom:18px;"><h2>NA vs EU altitude context</h2><div style="color:#cbd5e1;line-height:1.45;">Current page: <strong>{region}</strong> avg cruise/top altitude <strong>{avg_fl}</strong>, avg distance <strong>{avg}</strong>. Comparison region <strong>{compare_region}</strong>: avg cruise/top altitude <strong>{cmp_avg_fl}</strong>, avg distance <strong>{cmp_avg_dist}</strong>. EU short-haul flights often cruise lower because of airspace/ATC constraints; treat low FL as operational environment unless distance and route suggest otherwise.</div></div>
 <div class="grid"><div class="card chartbox"><h2>Flight Level Distribution</h2><canvas id="flChart"></canvas></div><div class="card chartbox"><h2>Aircraft Mix</h2><canvas id="typeChart"></canvas></div><div class="card chartbox"><h2>Top Operators</h2><canvas id="operatorChart"></canvas></div><div class="card chartbox"><h2>Arrival Airports</h2><canvas id="airportChart"></canvas></div><div class="card chartbox"><h2>Distance Distribution</h2><canvas id="distanceChart"></canvas></div><div class="card chartbox" style="grid-column:1/-1;"><h2>Block Speed vs Distance</h2><canvas id="blockChart"></canvas></div></div><h2>Route Map</h2><div id="routeMap"></div><div class="grid"><div class="card"><h2>Top Aircraft Variants</h2><table><thead><tr><th>Variant</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_types'])}</tbody></table></div><div class="card"><h2>Top Operators</h2><table><thead><tr><th>Operator</th><th style="text-align:right;">Flights</th><th></th></tr></thead><tbody>{simple_rows(data['top_operators'])}</tbody></table></div><div class="card"><h2>Top Arrival Airports</h2><table><thead><tr><th>Airport</th><th style="text-align:right;">Arrivals</th><th></th></tr></thead><tbody>{simple_rows(data['top_airports'])}</tbody></table></div><div class="card"><h2>Top Routes</h2><table><thead><tr><th>Route</th><th style="text-align:right;">Flights</th><th>Avg Distance</th></tr></thead><tbody>{route_rows}</tbody></table></div></div>
@@ -3669,6 +3690,8 @@ def dashboard():
   </div>
   </div> <!-- /sticky-top -->
 
+  {_airline_sales_evidence_html(family)}
+
   <!-- Airline sightings stream. -->
 
   <!-- Pagination controls (top) -->
@@ -3837,6 +3860,8 @@ def eu_dashboard():
     {_watch_pill_html()}
   </div>
   </div> <!-- /sticky-top -->
+
+  {_airline_sales_evidence_html(family)}
 
   <!-- Pagination controls (top) -->
   {_pagination_html(page, total_pages, per_page, total_sightings)}
@@ -4182,7 +4207,6 @@ def plan_enrich():
 
 @app.get("/prospects")
 def prospects():
-    return redirect("/", code=302)
     # Region toggle — same pattern as /insights.
     region_raw = (request.args.get("region", "") or "").strip().upper()
     region = region_raw if region_raw in ("NA", "EU_UK", "OTHER") else None

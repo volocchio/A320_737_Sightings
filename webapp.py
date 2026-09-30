@@ -3379,7 +3379,7 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
     compare_region = "EU_UK" if region == "NA" else "NA"
     compare = database.get_airline_insights(region=compare_region, limit=5, family=family)
     stats = database.get_period_stats(region=region, family=family)
-    mission_bins = database.get_airline_mission_bins(region=region, family=family or "A320")
+    mission_bins = database.get_airline_mission_bins(region=region, family=family)
     mission_bins_html = _mission_bins_html(mission_bins, region=region)
     route_map = database.get_route_map_data(top_n=80, region=region, family=family)
     route_airports_js = _json.dumps(route_map.get("airports", []))
@@ -3436,7 +3436,7 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
         "Next layer will feed these mission bins into Tamarack Mission Analysis for fuel, climb, and WAT benefit estimates."
     )
     export_region = region
-    export_family = family or "A320"
+    export_family = family or "ALL"
     export_links = (
         f'<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">'
         f'<a href="/export/mission-bins.csv?region={export_region}&family={export_family}" style="display:inline-block;background:#0f172a;color:#93c5fd;border:1px solid #334155;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:700;">↓ Mission bins CSV</a>'
@@ -4656,7 +4656,7 @@ def _request_region(default: str | None = "NA") -> str | None:
 
 @app.get("/api/mission-bins")
 def api_mission_bins():
-    family = _normalize_family(request.args.get("family")) or "A320"
+    family = _normalize_family(request.args.get("family"))
     region = _request_region("NA")
     bins = database.get_airline_mission_bins(region=region, family=family)
     return jsonify({
@@ -4671,7 +4671,7 @@ def api_mission_bins():
 
 @app.get("/export/mission-bins.csv")
 def export_mission_bins_csv():
-    family = _normalize_family(request.args.get("family")) or "A320"
+    family = _normalize_family(request.args.get("family"))
     region = _request_region("NA")
     rows = database.get_airline_mission_bins(region=region, family=family)
     output = io.StringIO()

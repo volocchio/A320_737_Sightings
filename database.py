@@ -18,8 +18,12 @@ log = logging.getLogger(__name__)
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
+    # Multiple background workers enrich rows while the poller writes new
+    # sightings. Give SQLite time to wait instead of raising immediately.
+    conn.execute("PRAGMA busy_timeout = 30000")
+    conn.execute("PRAGMA journal_mode = WAL")
     return conn
 
 

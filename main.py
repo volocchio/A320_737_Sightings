@@ -167,12 +167,25 @@ def _total_sightings() -> int:
         return 0
 
 
+def _safe_poll() -> None:
+    """Run one poll without letting transient errors kill the scheduler thread."""
+    try:
+        _poll()
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Poll cycle failed but scheduler will continue: %s", exc)
+        _update_state(status="error", last_error=str(exc))
+
+
 def _run_scheduler() -> None:
     """Polling loop thread — runs schedule forever."""
-    _poll()
-    schedule.every(config.POLL_INTERVAL_SECONDS).seconds.do(_poll)
+    _safe_poll()
+    schedule.every(config.POLL_INTERVAL_SECONDS).seconds.do(_safe_poll)
     while True:
-        schedule.run_pending()
+        try:
+            schedule.run_pending()
+        except Exception as exc:  # noqa: BLE001
+            log.exception("Scheduler loop error; continuing: %s", exc)
+            _update_state(status="error", last_error=str(exc))
         time.sleep(10)
 
 

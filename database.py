@@ -135,6 +135,21 @@ AIRLINE_OPERATOR_LABELS = {
     "LAN": "LATAM Airlines",
     "TAM": "LATAM Brasil",
     "CMP": "Copa Airlines",
+    "AMERICAN AIRLINES, INC.": "American Airlines",
+    "AMERICAN AIRLINES INC": "American Airlines",
+    "DELTA AIR LINES, INC.": "Delta Air Lines",
+    "DELTA AIR LINES INC": "Delta Air Lines",
+    "UNITED AIRLINES, INC.": "United Airlines",
+    "UNITED AIRLINES INC": "United Airlines",
+    "JETBLUE AIRWAYS CORPORATION": "JetBlue Airways",
+    "JETBLUE AIRWAYS CORP": "JetBlue Airways",
+    "ALLEGIANT AIR, LLC": "Allegiant Air",
+    "ALLEGIANT AIR LLC": "Allegiant Air",
+    "FRONTIER AIRLINES, INC.": "Frontier Airlines",
+    "FRONTIER AIRLINES INC": "Frontier Airlines",
+    "AIR CANADA ROUGE LP": "Air Canada Rouge",
+    "VIVAAEROBUS": "VivaAerobus",
+    "CONCESIONARIA VUELA COMPANIA DE AVIACION, SAB DE CV": "Volaris",
 }
 
 

@@ -4313,6 +4313,7 @@ def airline_dossiers():
     fam_sql, fam_args = database.family_where_clause(family)
     sim = _sim_bin_lookup()
     fuel_price_per_lb = 0.50  # ≈ $3.35/gal Jet-A ÷ 6.7 lb/gal; transparent estimate.
+    lookback_days = 30
     rows = []
     with database._connect() as conn:
         raw = [dict(r) for r in conn.execute(f"""
@@ -4323,10 +4324,10 @@ def airline_dossiers():
                    arrived_utc
             FROM v_sightings_dedup
             WHERE region=?{fam_sql}
-              AND arrived_utc >= datetime('now','-30 days')
+              AND arrived_utc >= datetime('now',?)
               AND distance_nm IS NOT NULL AND distance_nm > 0
             ORDER BY id DESC
-        """, (region, *fam_args)).fetchall()]
+        """, (region, f"-{lookback_days} days", *fam_args)).fetchall()]
     by_op: dict[str, dict] = {}
     unidentified_flights = 0
     for r in raw:
@@ -4378,17 +4379,29 @@ def airline_dossiers():
         </div>''')
     nav_suffix = _family_query_suffix(family)
     range_economics_html = _mission_economics_range_bars(region)
+    filtered_notes = []
+    if unidentified_flights:
+        filtered_notes.append(
+            f"{unidentified_flights:,} deduped flights in this {lookback_days}-day "
+            f"{region} / {_family_label(family)} view have no reliable airline/operator attribution yet. "
+            "They remain in the sightings database, but are excluded from sales-facing airline cards until tail-owner/operator enrichment maps them to a credible operator."
+        )
+    if low_confidence_flights:
+        filtered_notes.append(
+            f"{low_confidence_flights:,} additional flights are assigned only to low-volume or weak operator-code buckets "
+            "(<25 observed flights or no simulator match), so they are hidden from cards to avoid bogus prospects."
+        )
     unknown_note = (
-        f'<div style="background:#2d1e0a;border-left:4px solid #f59e0b;border-radius:8px;padding:10px 12px;color:#fcd34d;margin:0 0 14px;font-size:13px;">'
-        f'Excluded {unidentified_flights:,} unidentified/operator-missing flights from airline prospect cards. They are aggregate data-quality backlog, not a sales target.'
-        + (f' Also hid {low_confidence_flights:,} low-confidence/low-volume operator-code rows.' if low_confidence_flights else '')
-        + f'</div>'
-        if unidentified_flights else ""
+        '<div style="background:#2d1e0a;border-left:4px solid #f59e0b;border-radius:8px;padding:10px 12px;color:#fcd34d;margin:0 0 14px;font-size:13px;line-height:1.35;">'
+        + '<strong>Filtered from prospect cards:</strong> '
+        + ' '.join(html.escape(x) for x in filtered_notes)
+        + '</div>'
+        if filtered_notes else ""
     )
     return f'''<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Airline Dossiers — A320/737 Sightings</title>
     <style>body{{background:#0f172a;color:#e2e8f0;font-family:Arial,sans-serif;padding:24px}}a{{color:#60a5fa;text-decoration:none}} .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px}}</style></head><body>
     <div style="margin-bottom:14px;"><a href="/{nav_suffix}">← Sightings</a> · <a href="/insights{nav_suffix}">Insights</a> · <a href="/eu-insights{nav_suffix}">EU Insights</a></div>
-    <h1>Airline Dossiers</h1><div style="color:#94a3b8;margin-bottom:16px;">Airline-facing rollup: observed routes × current simulator distance bins × transparent fuel/cost estimate. Fuel price assumption: ${fuel_price_per_lb:.2f}/lb Jet-A. Calibration caveat stays visible until the A320 config is finalized.</div>
+    <h1>Airline Dossiers</h1><div style="color:#94a3b8;margin-bottom:16px;">Airline-facing rollup for the last {lookback_days} days: deduped {region} {_family_label(family)} flights with observed routes × current simulator distance bins × transparent fuel/cost estimate. Fuel price assumption: ${fuel_price_per_lb:.2f}/lb Jet-A. Calibration caveat stays visible until the A320 config is finalized.</div>
     {_family_filter_html(family, "/airlines")}
     {unknown_note}
     {range_economics_html}

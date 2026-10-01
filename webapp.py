@@ -796,10 +796,10 @@ def _mission_economics_range_bars(region: str | None = None, lookback_days: int 
     return f'''
     <section style="background:#1e293b;border:1px solid #334155;border-left:4px solid #22c55e;border-radius:10px;padding:14px 16px;margin:0 0 18px;">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap;">
-        <div style="font-size:17px;font-weight:900;color:#e2e8f0;">Range-bin fuel-savings economics</div>
+        <div style="font-size:17px;font-weight:900;color:#e2e8f0;">Mission bucket totals — all operators combined</div>
         <div style="font-size:11px;color:#94a3b8;">{html.escape(reg_label)} · fuel ${fuel_price_per_gal:.2f}/gal · current sim workup · calibration pending</div>
       </div>
-      <div style="font-size:12px;color:#94a3b8;margin:6px 0 12px;">Horizontal bars show <strong style="color:#e2e8f0;">annualized savings projection</strong> from the last {lookback_days} days of observed flights in each range bin. Each row also shows average distance, average altitude, observed-period fuel saved gallons, and weighted fuel-saved percent.</div>
+      <div style="font-size:12px;color:#94a3b8;margin:6px 0 12px;">This is the <strong style="color:#e2e8f0;">mission-length view</strong>: each bar is the annualized savings projection for <strong style="color:#e2e8f0;">all observed operators combined</strong> in that distance bucket. The $66M shown for 750–1000 nm is not one airline; it is the total value of that bucket across the selected fleet sample.</div>
       {''.join(bars)}
     </section>'''
 
@@ -4402,9 +4402,17 @@ def airline_dossiers():
         + '</div>'
         if filtered_notes else ""
     )
+    pivot_note = (
+        '<section style="background:#172554;border:1px solid #1d4ed8;border-left:4px solid #60a5fa;border-radius:10px;padding:12px 14px;margin:0 0 16px;color:#bfdbfe;font-size:13px;line-height:1.4;">'
+        '<strong>How to read this:</strong> the chart above and cards below are two different pivots of the same 30-day observed sample. '
+        '<strong>Top chart = by mission distance bucket, all operators combined.</strong> '
+        '<strong>Cards = by airline/operator, summed across all its matched mission buckets.</strong> '
+        'So a $66M 750–1000 nm bucket can coexist with a $69M American Airlines card; they answer different questions.'
+        '</section>'
+    )
     dossier_section = (
-        '<h2 style="margin:18px 0 10px;color:#e2e8f0;">Airline dossier cards</h2>'
-        '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">Ranked by annualized savings projection from the selected 30-day observed window. Operators are sourced from live sightings first, then JETNET tail-owner/operator enrichment.</div>'
+        '<h2 style="margin:18px 0 10px;color:#e2e8f0;">Operator totals — summed across mission buckets</h2>'
+        '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">Ranked by annualized savings projection from the selected 30-day observed window. Each card totals that operator across every matched distance/altitude bucket, not just one range-bin row. Operators are sourced from live sightings first, then JETNET tail-owner/operator enrichment.</div>'
         f'<div class="grid">{''.join(cards) or '<div style="color:#94a3b8;">No airline dossier rows for this filter yet.</div>'}</div>'
     )
     return f'''<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Airline Dossiers — A320/737 Sightings</title>
@@ -4416,6 +4424,7 @@ def airline_dossiers():
     {_family_filter_html(family, "/airlines")}
     {unknown_note}
     {range_economics_html}
+    {pivot_note}
     {dossier_section}
     </body></html>'''
 

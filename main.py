@@ -626,27 +626,35 @@ def main() -> None:
     t_watch = threading.Thread(target=_run_watchdog, daemon=True, name="watchdog")
     t_watch.start()
 
-    # Warm expensive dashboard/insights caches after startup. The first render
-    # of insights can take ~60s because it scans the dedup view; doing it in a
-    # background thread prevents the first human click from looking dead.
+    # Keep expensive dashboard/insights caches warm. Insights pages scan the
+    # dedup view and can take several seconds cold; warming repeatedly keeps
+    # the first human click from looking dead after the 5-minute page TTL.
     def _warm_dashboard_cache():
-        time.sleep(5)
         paths = [
+            # Airline-facing clicks first; these are the pages most likely to
+            # be opened during a demo.
+            "/eu-insights?family=A320CEO",
+            "/insights?family=A320CEO",
+            "/airlines?region=EU_UK&family=A320CEO",
+            "/airlines?region=NA&family=A320CEO",
             "/?family=A320CEO",
             "/eu?family=A320CEO",
-            "/insights?family=A320CEO",
-            "/eu-insights?family=A320CEO",
             "/insights?family=A320NEO",
             "/eu-insights?family=A320NEO",
         ]
-        try:
-            with flask_app.test_client() as client:
-                for path in paths:
-                    t0 = time.time()
-                    resp = client.get(path)
-                    log.info("Cache warm %s -> %s in %.1fs", path, resp.status_code, time.time() - t0)
-        except Exception as exc:  # noqa: BLE001
-            log.warning("Dashboard cache warm failed: %s", exc)
+        while True:
+            time.sleep(5)
+            try:
+                with flask_app.test_client() as client:
+                    for path in paths:
+                        t0 = time.time()
+                        resp = client.get(path)
+                        log.info("Cache warm %s -> %s in %.1fs", path, resp.status_code, time.time() - t0)
+                # airline_insights cache TTL is 300s; refresh before expiry.
+                time.sleep(240)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Dashboard cache warm failed: %s", exc)
+                time.sleep(60)
     threading.Thread(target=_warm_dashboard_cache, daemon=True, name="dashboard-cache-warm").start()
 
     # Thread 3 — Flask dashboard on port 8737

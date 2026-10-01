@@ -4287,17 +4287,19 @@ def _sim_bin_lookup() -> dict[tuple[str, str, str], dict]:
 
 def _dist_bin_label(nm: float | None) -> str | None:
     if nm is None: return None
+    if 0 <= nm < 250: return "0–250 nm"
     if 250 <= nm < 500: return "250–500 nm"
     if 500 <= nm < 750: return "500–750 nm"
     if 750 <= nm < 1000: return "750–1000 nm"
     if 1000 <= nm < 1500: return "1000–1500 nm"
-    if 1500 <= nm < 2000: return "1500–2000 nm"
-    if nm >= 2000: return "2000+ nm"
+    if nm >= 1500: return "1500+ nm"
     return None
 
 
 def _alt_bin_label(ft: float | None) -> str | None:
     if ft is None: return None
+    if 0 <= ft < 25000: return "< FL250"
+    if 25000 <= ft < 31000: return "FL250–310"
     if 31000 <= ft < 35000: return "FL310–350"
     if 35000 <= ft < 39000: return "FL350–390"
     if ft >= 39000: return "FL390+"

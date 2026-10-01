@@ -4331,7 +4331,7 @@ def airline_dossiers():
               AND arrived_utc >= datetime('now',?)
               AND distance_nm IS NOT NULL AND distance_nm > 0
             ORDER BY id DESC
-        """, (region, f"-{lookback_days} days", *fam_args)).fetchall()]
+        """, (region, *fam_args, f"-{lookback_days} days")).fetchall()]
     by_op: dict[str, dict] = {}
     unidentified_flights = 0
     for r in raw:

@@ -135,6 +135,18 @@ AIRLINE_OPERATOR_LABELS = {
     "LAN": "LATAM Airlines",
     "TAM": "LATAM Brasil",
     "CMP": "Copa Airlines",
+    "GXA": "GlobalX",
+    "SCX": "Sun Country Airlines",
+    "VXP": "Avelo Airlines",
+    "ICE": "Icelandair",
+    "EIN": "Aer Lingus",
+    "AMX": "Aeromexico",
+    "TSC": "Air Transat",
+    "KAL": "Korean Air",
+    "CAY": "Cayman Airways",
+    "BWA": "Caribbean Airlines",
+    "RZO": "Azores Airlines",
+    "TAI": "Avianca El Salvador",
     "AMERICAN AIRLINES, INC.": "American Airlines",
     "AMERICAN AIRLINES INC": "American Airlines",
     "DELTA AIR LINES, INC.": "Delta Air Lines",
@@ -169,6 +181,22 @@ def _operator_display_label(raw: str | None) -> str:
     if _is_unidentified_operator(op):
         return UNIDENTIFIED_OPERATOR_LABEL
     return AIRLINE_OPERATOR_LABELS.get(op, op)
+
+
+def _operator_from_flight_id(flight_id: str | None) -> str | None:
+    """Infer airline operator from a known ICAO callsign/flight-id prefix.
+
+    Safe fallback when source metadata omits operator but flight_id is like
+    AAL1234-... or SWA987-.... Does not infer from owner/lessor.
+    """
+    fid = (flight_id or "").strip().upper()
+    if len(fid) < 3:
+        return None
+    prefix = fid[:3]
+    label = AIRLINE_OPERATOR_LABELS.get(prefix)
+    if label and label != prefix:
+        return label
+    return None
 
 
 def _friendly_operator_rollup(rows: list[dict], limit: int) -> list[dict]:
@@ -494,6 +522,10 @@ def record_sighting(sighting: dict) -> None:
         return
 
     tail = sighting.get("tail_number") or ""
+    if not (sighting.get("operator") or "").strip():
+        inferred_operator = _operator_from_flight_id(sighting.get("flight_id"))
+        if inferred_operator:
+            sighting = {**sighting, "operator": inferred_operator}
     serial_number: str | None = None
     is_tamarack_fleet: int | None = None
     ac_subvariant: str | None = None

@@ -145,6 +145,8 @@ AIRLINE_OPERATOR_LABELS = {
     "JETBLUE AIRWAYS CORP": "JetBlue Airways",
     "ALLEGIANT AIR, LLC": "Allegiant Air",
     "ALLEGIANT AIR LLC": "Allegiant Air",
+    "HAWAIIAN AIRLINES, INC.": "Hawaiian Airlines",
+    "HAWAIIAN AIRLINES INC": "Hawaiian Airlines",
     "FRONTIER AIRLINES, INC.": "Frontier Airlines",
     "FRONTIER AIRLINES INC": "Frontier Airlines",
     "AIR CANADA ROUGE LP": "Air Canada Rouge",

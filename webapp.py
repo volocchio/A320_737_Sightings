@@ -662,7 +662,7 @@ def _mission_bins_stage_bar_chart(points: list[dict]) -> str:
     parts = [
         '<div style="margin-top:18px;border-top:1px solid #334155;padding-top:14px;">',
         '<div style="font-size:13px;font-weight:800;color:#e2e8f0;margin-bottom:6px;">Estimated fuel savings by distance bin — simulator result</div>',
-        '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Weighted by observed flights in each distance × altitude bin. Green = EU/UK, orange = North America. Values are % fuel saved from the current Tamarack Mission Analysis workup.</div>',
+        '<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Weighted by observed flights in each distance × altitude bin. Green = EU/UK, orange = North America. Values are current simulator estimates from a +30% effective-AR / induced-drag-delta workup; calibration pending, not certified or guaranteed airline savings.</div>',
         f'<svg width="100%" viewBox="0 0 {width} {height}" style="display:block;max-width:100%;" role="img" aria-label="Weighted savings by stage length">',
         f'<rect x="0" y="0" width="{width}" height="{height}" rx="10" fill="#0f172a"/>',
     ]
@@ -815,7 +815,7 @@ def _mission_economics_range_bars(region: str | None = None, lookback_days: int 
             <div style="height:22px;background:#0f172a;border-radius:999px;overflow:hidden;border:1px solid #334155;">
               <div style="width:{w:.1f}%;height:100%;background:linear-gradient(90deg,#22c55e,#84cc16);border-radius:999px;"></div>
             </div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:3px;">avg {x['avg_dist']:.0f} nm · avg FL{x['avg_alt']/100:.0f} · {x['flights']:,} observed flights · {x['avg_pct']:.1f}% saved</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:3px;">avg {x['avg_dist']:.0f} nm · avg FL{x['avg_alt']/100:.0f} · {x['flights']:,} observed flights · sim est. {x['avg_pct']:.1f}% saved</div>
           </div>
           <div style="text-align:right;">
             <div style="font-weight:900;color:#fbbf24;">${x['usd']:,.0f}/yr</div>
@@ -827,9 +827,9 @@ def _mission_economics_range_bars(region: str | None = None, lookback_days: int 
     <section style="background:#1e293b;border:1px solid #334155;border-left:4px solid #22c55e;border-radius:10px;padding:14px 16px;margin:0 0 18px;">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap;">
         <div style="font-size:17px;font-weight:900;color:#e2e8f0;">Mission bucket totals — all operators combined</div>
-        <div style="font-size:11px;color:#94a3b8;">{html.escape(reg_label)} · fuel ${fuel_price_per_gal:.2f}/gal · current sim workup · calibration pending</div>
+        <div style="font-size:11px;color:#94a3b8;">{html.escape(reg_label)} · fuel ${fuel_price_per_gal:.2f}/gal · simulator estimate · +30% effective AR assumption · calibration pending</div>
       </div>
-      <div style="font-size:12px;color:#94a3b8;margin:6px 0 12px;">This is the <strong style="color:#e2e8f0;">mission-length view</strong>: each bar is the annualized savings projection for <strong style="color:#e2e8f0;">all observed operators combined</strong> in that distance bucket. A large bucket value is not one airline; it is the total value of that bucket across the selected fleet sample.</div>
+      <div style="font-size:12px;color:#94a3b8;margin:6px 0 12px;">This is the <strong style="color:#e2e8f0;">mission-length view</strong>: each bar is an annualized <strong style="color:#e2e8f0;">simulator-estimate</strong> for <strong style="color:#e2e8f0;">all observed operators combined</strong> in that distance bucket. A large bucket value is not one airline; it is the total value of that bucket across the selected fleet sample. Not certified performance data; use for opportunity sizing only.</div>
       {''.join(bars)}
     </section>'''
 
@@ -3561,7 +3561,7 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
     mission_note = (
         f"<strong>{fam_label}</strong> mission sample: {data['total']:,} flights, "
         f"avg distance <strong>{avg}</strong>, avg flight level <strong>{avg_fl}</strong>. "
-        "Next layer will feed these mission bins into Tamarack Mission Analysis for fuel, climb, and WAT benefit estimates."
+        "Fuel charts below are current simulator estimates from the generated A320 workup; calibration is pending, so use them for opportunity sizing rather than certified airline guarantees."
     )
     export_region = region
     export_family = family or "ALL"

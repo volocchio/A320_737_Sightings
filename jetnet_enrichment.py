@@ -175,6 +175,7 @@ def _upsert_owner_row(nnumber: str, payload: dict, now_iso: str) -> None:
     """
     contact = payload.get("contact") or {}
     raw = payload.get("raw") or {}
+    operator = (raw.get("operatorname") or raw.get("operator"))
     with _connect() as conn:
         conn.execute(
             """
@@ -209,7 +210,7 @@ def _upsert_owner_row(nnumber: str, payload: dict, now_iso: str) -> None:
                 payload.get("companyid"),
                 payload.get("contactid"),
                 payload.get("owner"),
-                (raw.get("operatorname") or raw.get("operator")),
+                operator,
                 contact.get("phone"),
                 contact.get("email"),
                 contact.get("address"),
@@ -223,6 +224,20 @@ def _upsert_owner_row(nnumber: str, payload: dict, now_iso: str) -> None:
                 now_iso,
             ),
         )
+        # If the async/live JETNET lookup discovers a real operator after the
+        # flight row was inserted, propagate that safe operator attribution
+        # into historical blank sightings for the same tail. Do NOT fall back
+        # to owner here: lessors/financiers are not airline operators.
+        if operator:
+            conn.execute(
+                """
+                UPDATE sightings
+                   SET operator = ?
+                 WHERE tail_number = ?
+                   AND (operator IS NULL OR operator = '')
+                """,
+                (operator, nnumber),
+            )
         conn.commit()
 
 

@@ -3793,7 +3793,7 @@ def dashboard():
   </div>
   </div> <!-- /sticky-top -->
 
-  {_airline_sales_evidence_html(family, region=region)}
+  {_airline_sales_evidence_html(family, region="NA")}
 
   <!-- Airline sightings stream. -->
 
@@ -3964,7 +3964,7 @@ def eu_dashboard():
   </div>
   </div> <!-- /sticky-top -->
 
-  {_airline_sales_evidence_html(family, region=region)}
+  {_airline_sales_evidence_html(family, region="EU_UK")}
 
   <!-- Pagination controls (top) -->
   {_pagination_html(page, total_pages, per_page, total_sightings)}

@@ -733,7 +733,7 @@ def _mission_bins_weighted_line_chart(points: list[dict]) -> str:
     return ''.join(parts)
 
 
-def _mission_economics_range_bars(region: str | None = None) -> str:
+def _mission_economics_range_bars(region: str | None = None, lookback_days: int = 30) -> str:
     """Airline-facing horizontal range-bin economics chart from sim rows."""
     rows = [r for r in _load_sim_result_rows() if r.get("fuel_saved_pct_avg") is not None]
     if region:
@@ -770,7 +770,7 @@ def _mission_economics_range_bars(region: str | None = None) -> str:
             "avg_alt": g["alt"] / f,
             "avg_pct": g["pct"] / f,
             "gal": gal,
-            "usd": gal * fuel_price_per_gal,
+            "usd": gal * fuel_price_per_gal * (365.0 / max(1, lookback_days)),
             "order": stage_order(stage),
         })
     items.sort(key=lambda x: x["order"])
@@ -788,8 +788,8 @@ def _mission_economics_range_bars(region: str | None = None) -> str:
             <div style="font-size:11px;color:#94a3b8;margin-top:3px;">avg {x['avg_dist']:.0f} nm · avg FL{x['avg_alt']/100:.0f} · {x['flights']:,} observed flights · {x['avg_pct']:.1f}% saved</div>
           </div>
           <div style="text-align:right;">
-            <div style="font-weight:900;color:#fbbf24;">${x['usd']:,.0f}</div>
-            <div style="font-size:11px;color:#94a3b8;">{x['gal']:,.0f} gal saved</div>
+            <div style="font-weight:900;color:#fbbf24;">${x['usd']:,.0f}/yr</div>
+            <div style="font-size:11px;color:#94a3b8;">{x['gal']:,.0f} gal / {lookback_days}d observed</div>
           </div>
         </div>''')
     reg_label = {"NA": "North America", "EU_UK": "Europe / UK", "OTHER": "Other"}.get(region or "", "NA + EU/UK")
@@ -799,7 +799,7 @@ def _mission_economics_range_bars(region: str | None = None) -> str:
         <div style="font-size:17px;font-weight:900;color:#e2e8f0;">Range-bin fuel-savings economics</div>
         <div style="font-size:11px;color:#94a3b8;">{html.escape(reg_label)} · fuel ${fuel_price_per_gal:.2f}/gal · current sim workup · calibration pending</div>
       </div>
-      <div style="font-size:12px;color:#94a3b8;margin:6px 0 12px;">Horizontal bars show estimated dollar value across observed flights in each range bin. Each row also shows average distance, average altitude, fuel saved gallons, and weighted fuel-saved percent.</div>
+      <div style="font-size:12px;color:#94a3b8;margin:6px 0 12px;">Horizontal bars show <strong style="color:#e2e8f0;">annualized savings projection</strong> from the last {lookback_days} days of observed flights in each range bin. Each row also shows average distance, average altitude, observed-period fuel saved gallons, and weighted fuel-saved percent.</div>
       {''.join(bars)}
     </section>'''
 
@@ -4317,12 +4317,14 @@ def airline_dossiers():
     rows = []
     with database._connect() as conn:
         raw = [dict(r) for r in conn.execute(f"""
-            SELECT COALESCE(NULLIF(operator,''), 'Unknown') AS operator,
+            SELECT COALESCE(NULLIF(s.operator,''), NULLIF(o.operator,''), 'Unknown') AS operator,
+                   NULLIF(o.owner,'') AS owner,
                    origin_icao, dest_icao, tail_number, ac_type,
                    distance_nm,
                    COALESCE(sustained_top_alt_ft, top_altitude_ft, initial_cruise_alt_ft) AS alt_ft,
                    arrived_utc
-            FROM v_sightings_dedup
+            FROM v_sightings_dedup s
+            LEFT JOIN tail_owners o ON o.nnumber = s.tail_number
             WHERE region=?{fam_sql}
               AND arrived_utc >= datetime('now',?)
               AND distance_nm IS NOT NULL AND distance_nm > 0
@@ -4359,8 +4361,8 @@ def airline_dossiers():
             low_confidence_flights += d["flights"]
             continue
         simmed = d["simmed"]
-        monthly_fuel_lb = d["fuel_lb"]
-        annual_usd = monthly_fuel_lb * 12.0 * fuel_price_per_lb
+        observed_fuel_lb = d["fuel_lb"]
+        annual_usd = observed_fuel_lb * (365.0 / max(1, lookback_days)) * fuel_price_per_lb
         top_routes = sorted(d["routes"].items(), key=lambda kv: -kv[1])[:4]
         dossiers.append({**d, "tails_n": len(d["tails"]), "avg_pct": d["weighted_pct"] / simmed, "annual_usd": annual_usd, "top_routes": top_routes})
     dossiers.sort(key=lambda x: (-x["annual_usd"], -x["flights"]))
@@ -4372,13 +4374,13 @@ def airline_dossiers():
           <div style="color:#94a3b8;font-size:12px;margin:4px 0 10px;">{d['flights']:,} observed {_family_label(family)} flights · {d['tails_n']:,} tails · {region}</div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;">
             <div><div style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Avg fuel saved</div><div style="font-size:20px;font-weight:900;color:#22c55e;">{d['avg_pct']:.1f}%</div></div>
-            <div><div style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Est. annual savings</div><div style="font-size:20px;font-weight:900;color:#fbbf24;">${d['annual_usd']:,.0f}</div></div>
+            <div><div style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Annualized savings</div><div style="font-size:20px;font-weight:900;color:#fbbf24;">${d['annual_usd']:,.0f}/yr</div></div>
             <div><div style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Sim-matched flights</div><div style="font-size:20px;font-weight:900;color:#93c5fd;">{d['simmed']:,}</div></div>
           </div>
           <div style="font-size:12px;color:#cbd5e1;line-height:1.45;"><strong>Evidence routes:</strong> {routes}</div>
         </div>''')
     nav_suffix = _family_query_suffix(family)
-    range_economics_html = _mission_economics_range_bars(region)
+    range_economics_html = _mission_economics_range_bars(region, lookback_days=lookback_days)
     filtered_notes = []
     if unidentified_flights:
         filtered_notes.append(
@@ -4398,14 +4400,21 @@ def airline_dossiers():
         + '</div>'
         if filtered_notes else ""
     )
+    dossier_section = (
+        '<h2 style="margin:18px 0 10px;color:#e2e8f0;">Airline dossier cards</h2>'
+        '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">Ranked by annualized savings projection from the selected 30-day observed window. Operators are sourced from live sightings first, then JETNET tail-owner/operator enrichment.</div>'
+        f'<div class="grid">{''.join(cards) or '<div style="color:#94a3b8;">No airline dossier rows for this filter yet.</div>'}</div>'
+    )
     return f'''<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Airline Dossiers — A320/737 Sightings</title>
     <style>body{{background:#0f172a;color:#e2e8f0;font-family:Arial,sans-serif;padding:24px}}a{{color:#60a5fa;text-decoration:none}} .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px}}</style></head><body>
     <div style="margin-bottom:14px;"><a href="/{nav_suffix}">← Sightings</a> · <a href="/insights{nav_suffix}">Insights</a> · <a href="/eu-insights{nav_suffix}">EU Insights</a></div>
-    <h1>Airline Dossiers</h1><div style="color:#94a3b8;margin-bottom:16px;">Airline-facing rollup for the last {lookback_days} days: deduped {region} {_family_label(family)} flights with observed routes × current simulator distance bins × transparent fuel/cost estimate. Fuel price assumption: ${fuel_price_per_lb:.2f}/lb Jet-A. Calibration caveat stays visible until the A320 config is finalized.</div>
+    <h1>Airline Dossiers</h1>
+    <div style="display:inline-block;background:#1d4ed8;color:#fff;border-radius:999px;padding:8px 14px;font-size:16px;font-weight:900;margin:2px 0 10px;">30-DAY OBSERVED WINDOW → ANNUALIZED SAVINGS</div>
+    <div style="color:#94a3b8;margin-bottom:16px;">Airline-facing rollup: deduped {region} / {_family_label(family)} flights with observed routes × current simulator distance bins × transparent fuel/cost estimate. Savings shown as <strong style="color:#e2e8f0;">annualized projections from the last {lookback_days} days</strong>. Fuel price assumption: ${fuel_price_per_lb:.2f}/lb Jet-A. Calibration caveat stays visible until the A320 config is finalized.</div>
     {_family_filter_html(family, "/airlines")}
     {unknown_note}
     {range_economics_html}
-    <div class="grid">{''.join(cards) or '<div style="color:#94a3b8;">No airline dossier rows for this filter yet.</div>'}</div>
+    {dossier_section}
     </body></html>'''
 
 

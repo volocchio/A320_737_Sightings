@@ -829,7 +829,7 @@ def _mission_economics_range_bars(region: str | None = None, lookback_days: int 
         <div style="font-size:17px;font-weight:900;color:#e2e8f0;">Mission bucket totals — all operators combined</div>
         <div style="font-size:11px;color:#94a3b8;">{html.escape(reg_label)} · fuel ${fuel_price_per_gal:.2f}/gal · current sim workup · calibration pending</div>
       </div>
-      <div style="font-size:12px;color:#94a3b8;margin:6px 0 12px;">This is the <strong style="color:#e2e8f0;">mission-length view</strong>: each bar is the annualized savings projection for <strong style="color:#e2e8f0;">all observed operators combined</strong> in that distance bucket. The $66M shown for 750–1000 nm is not one airline; it is the total value of that bucket across the selected fleet sample.</div>
+      <div style="font-size:12px;color:#94a3b8;margin:6px 0 12px;">This is the <strong style="color:#e2e8f0;">mission-length view</strong>: each bar is the annualized savings projection for <strong style="color:#e2e8f0;">all observed operators combined</strong> in that distance bucket. A large bucket value is not one airline; it is the total value of that bucket across the selected fleet sample.</div>
       {''.join(bars)}
     </section>'''
 
@@ -4439,7 +4439,7 @@ def airline_dossiers():
         '<strong>How to read this:</strong> the chart above and cards below are two different pivots of the same 30-day observed sample. '
         '<strong>Top chart = by mission distance bucket, all operators combined.</strong> '
         '<strong>Cards = by airline/operator, summed across all its matched mission buckets.</strong> '
-        'So a $66M 750–1000 nm bucket can coexist with a $69M American Airlines card; they answer different questions.'
+        'So a large mission-bucket total can coexist with a large operator card; they answer different questions.'
         '</section>'
     )
     dossier_section = (
@@ -4449,7 +4449,7 @@ def airline_dossiers():
     )
     return f'''<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Airline Dossiers — A320/737 Sightings</title>
     <style>body{{background:#0f172a;color:#e2e8f0;font-family:Arial,sans-serif;padding:24px}}a{{color:#60a5fa;text-decoration:none}} .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px}}</style></head><body>
-    <div style="margin-bottom:14px;"><a href="/{nav_suffix}">← Sightings</a> · <a href="/insights{nav_suffix}">Insights</a> · <a href="/eu-insights{nav_suffix}">EU Insights</a></div>
+    <div style="margin-bottom:14px;"><a href="/{nav_suffix}">← Sightings</a> · <a href="/insights{nav_suffix}">NA Insights</a> · <a href="/eu-insights{nav_suffix}">EU Insights</a></div>
     <h1>Airline Dossiers</h1>
     <div style="display:inline-block;background:#1d4ed8;color:#fff;border-radius:999px;padding:8px 14px;font-size:16px;font-weight:900;margin:2px 0 10px;">30-DAY OBSERVED WINDOW → ANNUALIZED SAVINGS</div>
     <div style="color:#94a3b8;margin-bottom:16px;">Airline-facing rollup: deduped <strong style="color:#e2e8f0;">{region_label}</strong> / <strong style="color:#e2e8f0;">{_family_label(family)}</strong> flights with observed routes × current simulator distance bins × transparent fuel/cost estimate. Savings shown as <strong style="color:#e2e8f0;">annualized projections from the last {lookback_days} days</strong>. Fuel price assumption: ${fuel_price_per_lb:.2f}/lb Jet-A. Calibration caveat stays visible until the A320 config is finalized.</div>

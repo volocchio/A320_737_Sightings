@@ -411,8 +411,38 @@ def _family_filter_html(active: str | None, base_path: str) -> str:
     return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px;align-items:center;"><span style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.8px;">Type</span>' + pill("A320 CEO", "A320CEO") + pill("A320 NEO", "A320NEO") + pill("A320 All", "A320") + pill("737 Family", "B737") + pill("All", None) + '</div>'
 
 
-def _airline_sales_evidence_html(family: str | None = None) -> str:
+def _airline_dossier_filters_html(region: str, family: str | None) -> str:
+    """Region + type filter pills that preserve both query params."""
+    fam = _normalize_family(family) or "ALL"
+    reg = region if region in {"NA", "EU_UK", "OTHER"} else "NA"
+
+    def region_pill(label: str, value: str) -> str:
+        active = reg == value
+        bg = "#2563eb" if active else "#1e293b"
+        border = "#60a5fa" if active else "#334155"
+        return f'<a href="/airlines?region={value}&family={fam}" style="display:inline-block;background:{bg};border:1px solid {border};color:#fff;padding:7px 12px;border-radius:999px;font-size:12px;font-weight:700;text-decoration:none;">{label}</a>'
+
+    def family_pill(label: str, value: str) -> str:
+        active = fam == value
+        bg = "#2563eb" if active else "#1e293b"
+        border = "#60a5fa" if active else "#334155"
+        return f'<a href="/airlines?region={reg}&family={value}" style="display:inline-block;background:{bg};border:1px solid {border};color:#fff;padding:7px 12px;border-radius:999px;font-size:12px;font-weight:700;text-decoration:none;">{label}</a>'
+
+    return (
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 8px;align-items:center;">'
+        '<span style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.8px;">Region</span>'
+        + region_pill("North America", "NA") + region_pill("Europe / UK", "EU_UK") + region_pill("Other", "OTHER") +
+        '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px;align-items:center;">'
+        '<span style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.8px;">Type</span>'
+        + family_pill("A320 CEO", "A320CEO") + family_pill("A320 NEO", "A320NEO") + family_pill("A320 All", "A320") + family_pill("737 Family", "B737") + family_pill("All", "ALL") +
+        '</div>'
+    )
+
+
+def _airline_sales_evidence_html(family: str | None = None, region: str = "NA") -> str:
     suffix = _family_query_suffix(family)
+    fam = _normalize_family(family) or "ALL"
+    dossier_href = f"/airlines?region={region}&family={fam}"
     return f'''
   <section style="background:#1e293b;border:1px solid #334155;border-left:4px solid #38bdf8;border-radius:10px;padding:14px 16px;margin:0 0 18px;">
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
@@ -423,7 +453,7 @@ def _airline_sales_evidence_html(family: str | None = None) -> str:
         </div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <a href="/airlines{suffix}" style="background:#0f766e;color:#fff;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:800;text-decoration:none;">🏢 Airline dossiers</a>
+        <a href="{dossier_href}" style="background:#0f766e;color:#fff;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:800;text-decoration:none;">🏢 Airline dossiers</a>
         <a href="/insights{suffix}" style="background:#1d4ed8;color:#fff;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:800;text-decoration:none;">📊 Insights</a>
       </div>
     </div>
@@ -3536,6 +3566,7 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
     export_region = region
     export_family = family or "ALL"
     nav_suffix = _family_query_suffix(family)
+    region_label = {"NA": "North America", "EU_UK": "Europe / UK", "OTHER": "Other"}.get(region, region)
     back_href_q = back_href + nav_suffix
     export_links = (
         f'<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">'
@@ -3555,9 +3586,9 @@ def _airline_insights_html(region: str, title: str, back_href: str, back_label: 
 .stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}} .stat,.card{{background:#1e293b;border-radius:8px;padding:16px}} .label{{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px}} .value{{font-size:26px;font-weight:800;color:#60a5fa}}
 .grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-bottom:18px}} #routeMap{{height:420px;border-radius:8px;border:1px solid #334155;margin-bottom:18px;background:#020617}} .chartbox{{height:320px}} h2{{font-size:15px;margin-bottom:10px}} table{{width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden}} th{{background:#334155;color:#94a3b8;font-size:11px;text-transform:uppercase;text-align:left;padding:9px}} td{{padding:9px;border-bottom:1px solid #334155;font-size:13px}} tr:hover{{background:#243244}}
 </style></head><body>
-<div class="nav"><a href="{back_href_q}">← {back_label}</a> &nbsp;·&nbsp; <a href="/{nav_suffix}">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights{nav_suffix}">NA Insights</a> &nbsp;·&nbsp; <a href="/eu{nav_suffix}">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights{nav_suffix}">EU Insights</a> &nbsp;·&nbsp; <a href="/airlines{nav_suffix}">Airline dossiers</a></div>
+<div class="nav"><a href="{back_href_q}">← {back_label}</a> &nbsp;·&nbsp; <a href="/{nav_suffix}">NA Sightings</a> &nbsp;·&nbsp; <a href="/insights{nav_suffix}">NA Insights</a> &nbsp;·&nbsp; <a href="/eu{nav_suffix}">EU Sightings</a> &nbsp;·&nbsp; <a href="/eu-insights{nav_suffix}">EU Insights</a> &nbsp;·&nbsp; <a href="/airlines?region={region}&family={family or 'ALL'}">Airline dossiers</a></div>
 <h1>{title}</h1><div class="sub">{fam_label} operational patterns · region: <strong>{region}</strong> · auto-refreshes every 2 min</div>{fam_filter}
-{_airline_sales_evidence_html(family)}
+{_airline_sales_evidence_html(family, region=region)}
 {range_economics_html}
 <div class="card" style="margin-bottom:18px;border-left:4px solid #22c55e;"><h2>Tamarack Mission-Benefit Setup</h2><div style="color:#cbd5e1;line-height:1.45;">{mission_note}</div>{export_links}{fuel_savings_html}</div>
 <div class="stats"><div class="stat"><div class="label">Last 24h</div><div class="value">{stats['today']}</div></div><div class="stat"><div class="label">Last 7 days</div><div class="value">{stats['week']}</div></div><div class="stat"><div class="label">All Time</div><div class="value">{data['total']}</div></div><div class="stat"><div class="label">Active Tails</div><div class="value">{data['active_tails']}</div></div><div class="stat"><div class="label">Avg Distance</div><div class="value">{avg}</div></div><div class="stat"><div class="label">Avg Flight Level</div><div class="value">{avg_fl}</div></div><div class="stat"><div class="label">Median Flight Level</div><div class="value">{med_fl}</div></div></div><div class="card" style="margin-bottom:18px;"><h2>NA vs EU altitude context</h2><div style="color:#cbd5e1;line-height:1.45;">Current page: <strong>{region}</strong> avg cruise/top altitude <strong>{avg_fl}</strong>, avg distance <strong>{avg}</strong>. Comparison region <strong>{compare_region}</strong>: avg cruise/top altitude <strong>{cmp_avg_fl}</strong>, avg distance <strong>{cmp_avg_dist}</strong>. EU short-haul flights often cruise lower because of airspace/ATC constraints; treat low FL as operational environment unless distance and route suggest otherwise.</div></div>
@@ -3762,7 +3793,7 @@ def dashboard():
   </div>
   </div> <!-- /sticky-top -->
 
-  {_airline_sales_evidence_html(family)}
+  {_airline_sales_evidence_html(family, region=region)}
 
   <!-- Airline sightings stream. -->
 
@@ -3933,7 +3964,7 @@ def eu_dashboard():
   </div>
   </div> <!-- /sticky-top -->
 
-  {_airline_sales_evidence_html(family)}
+  {_airline_sales_evidence_html(family, region=region)}
 
   <!-- Pagination controls (top) -->
   {_pagination_html(page, total_pages, per_page, total_sightings)}
@@ -4382,6 +4413,7 @@ def airline_dossiers():
           <div style="font-size:12px;color:#cbd5e1;line-height:1.45;"><strong>Evidence routes:</strong> {routes}</div>
         </div>''')
     nav_suffix = _family_query_suffix(family)
+    region_label = {"NA": "North America", "EU_UK": "Europe / UK", "OTHER": "Other"}.get(region, region)
     range_economics_html = _mission_economics_range_bars(region, lookback_days=lookback_days)
     filtered_notes = []
     if unidentified_flights:
@@ -4420,8 +4452,8 @@ def airline_dossiers():
     <div style="margin-bottom:14px;"><a href="/{nav_suffix}">← Sightings</a> · <a href="/insights{nav_suffix}">Insights</a> · <a href="/eu-insights{nav_suffix}">EU Insights</a></div>
     <h1>Airline Dossiers</h1>
     <div style="display:inline-block;background:#1d4ed8;color:#fff;border-radius:999px;padding:8px 14px;font-size:16px;font-weight:900;margin:2px 0 10px;">30-DAY OBSERVED WINDOW → ANNUALIZED SAVINGS</div>
-    <div style="color:#94a3b8;margin-bottom:16px;">Airline-facing rollup: deduped {region} / {_family_label(family)} flights with observed routes × current simulator distance bins × transparent fuel/cost estimate. Savings shown as <strong style="color:#e2e8f0;">annualized projections from the last {lookback_days} days</strong>. Fuel price assumption: ${fuel_price_per_lb:.2f}/lb Jet-A. Calibration caveat stays visible until the A320 config is finalized.</div>
-    {_family_filter_html(family, "/airlines")}
+    <div style="color:#94a3b8;margin-bottom:16px;">Airline-facing rollup: deduped <strong style="color:#e2e8f0;">{region_label}</strong> / <strong style="color:#e2e8f0;">{_family_label(family)}</strong> flights with observed routes × current simulator distance bins × transparent fuel/cost estimate. Savings shown as <strong style="color:#e2e8f0;">annualized projections from the last {lookback_days} days</strong>. Fuel price assumption: ${fuel_price_per_lb:.2f}/lb Jet-A. Calibration caveat stays visible until the A320 config is finalized.</div>
+    {_airline_dossier_filters_html(region, family)}
     {unknown_note}
     {range_economics_html}
     {pivot_note}
